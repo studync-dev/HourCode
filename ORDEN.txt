@@ -1,0 +1,3 @@
+cd C:\Users\angel\Desktop\FRIKCHION
+npm install
+npm start

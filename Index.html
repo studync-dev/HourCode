@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CORE - Educación Financiera</title>
+
+    <link rel="stylesheet" href="style.css">
+    <script src="https://unpkg.com/compromise"></script>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+
+    <!-- 🌌 Fondo estrellas -->
+    <div id="stars"></div>
+
+    <!-- 🍔 MENÚ HAMBURGUESA -->
+    <div class="menu-container">
+        <div class="menu-icon" id="menu-icon">
+            <span></span>
+            <span></span>
+            <span></span>
+        </div>
+        
+        <nav class="menu-nav" id="menu-nav">
+            <div class="menu-overlay"></div>
+            <ul class="menu-list">
+                <li data-feature="chat" class="active">
+                    <span class="menu-icon-small">💬</span>
+                    <span class="menu-text">Asistente de Compras</span>
+                </li>
+                <li data-feature="opportunity">
+                    <span class="menu-icon-small">⏱️</span>
+                    <span class="menu-text">Calculadora de Oportunidad</span>
+                </li>
+                <li data-feature="challenge">
+                    <span class="menu-icon-small">📅</span>
+                    <span class="menu-text">Reto Financiero</span>
+                </li>
+            </ul>
+        </nav>
+    </div>
+
+    <!-- 🌑 App -->
+    <div id="app">
+
+        <!-- 💬 CHAT (Principal) -->
+        <div id="chat-container" class="feature-content active"></div>
+
+        <!-- ⏱️ CALCULADORA DE OPORTUNIDAD -->
+        <div id="opportunity-container" class="feature-content">
+            <div class="feature-card">
+                <h2>⏱️ Calculadora de Oportunidad</h2>
+                <p>Convierte dinero en <strong>experiencias reales</strong></p>
+                
+                <div class="input-group">
+                    <label>💰 Cantidad (€)</label>
+                    <input type="number" id="opportunity-amount" placeholder="Ej: 800">
+                </div>
+                
+                <div class="input-group">
+                    <label>⏰ Tu salario por hora (€)</label>
+                    <input type="number" id="opportunity-wage" placeholder="Ej: 10">
+                </div>
+                
+                <button id="calculate-opportunity" class="action-btn">Calcular Oportunidad</button>
+                
+                <div id="opportunity-result" class="result-card"></div>
+            </div>
+        </div>
+
+        <!-- 📅 RETOS DIARIOS (formato conversacional) -->
+        <div id="challenge-container" class="feature-content">
+            <div class="feature-card">
+                <h2>📅 Reto Financiero</h2>
+                <p>Conversemos sobre tus gastos</p>
+                
+                <div id="challenge-chat" class="challenge-chat">
+                    <div class="challenge-message bot">
+                        👋 ¡Hola! Vamos a reflexionar juntos sobre tus gastos.<br><br>
+                        Cuéntame, ¿qué compraste hoy que crees que fue un gasto innecesario?
+                    </div>
+                </div>
+                
+                <div class="challenge-input-box">
+                    <input type="text" id="challenge-input" placeholder="Escribe tu respuesta..." autocomplete="off">
+                    <button id="challenge-send">→</button>
+                </div>
+                
+                <div id="challenge-streak" class="streak-counter">🔥 Racha: 0 días</div>
+            </div>
+        </div>
+
+        <!-- INPUT (solo visible en chat) -->
+        <div class="input-box" id="input-box">
+            <input 
+                type="text" 
+                id="user-input" 
+                placeholder="¿Qué estás pensando comprar?" 
+                autocomplete="off"
+            >
+            <button id="send-btn">→</button>
+        </div>
+
+    </div>
+
+    <script src="app.js"></script>
+
+</body>
+</html>

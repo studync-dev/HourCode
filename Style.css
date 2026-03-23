@@ -1,0 +1,538 @@
+:root {
+    --bg: #000;
+    --text: #fff;
+    --soft: rgba(255,255,255,0.08);
+    --scroll-thumb: rgba(255,255,255,0.2);
+    --scroll-track: rgba(255,255,255,0.05);
+}
+
+body {
+    margin: 0;
+    background: #000;
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    overflow: hidden;
+}
+
+/* 🌌 ESTRELLAS - SIN MOVIMIENTO BRUSCO */
+#stars {
+    position: fixed;
+    width: 100%;
+    height: 100%;
+    background: black;
+    z-index: -1;
+    overflow: hidden;
+}
+
+.star {
+    position: absolute;
+    background: white;
+    border-radius: 50%;
+    animation: gentleTwinkle 3s infinite ease-in-out;
+    will-change: opacity, transform;
+}
+
+@keyframes gentleTwinkle {
+    0% { 
+        opacity: 0.2;
+        transform: scale(1);
+    }
+    50% { 
+        opacity: 1;
+        transform: scale(1.1);
+    }
+    100% { 
+        opacity: 0.2;
+        transform: scale(1);
+    }
+}
+
+/* Estrellas con diferentes tamaños y velocidades */
+.star.big {
+    width: 3px;
+    height: 3px;
+    filter: blur(0.5px);
+    animation-duration: 2s;
+}
+
+.star.medium {
+    width: 2px;
+    height: 2px;
+    animation-duration: 2.5s;
+}
+
+.star.small {
+    width: 1px;
+    height: 1px;
+    animation-duration: 3.5s;
+    opacity: 0.5;
+}
+
+/* Estrellas fugaces - sin movimiento brusco */
+.shooting-star {
+    position: absolute;
+    width: 2px;
+    height: 2px;
+    background: white;
+    border-radius: 50%;
+    box-shadow: 0 0 8px 2px rgba(255, 255, 255, 0.6);
+    animation: gentleShoot 1.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    pointer-events: none;
+    z-index: 1;
+}
+
+@keyframes gentleShoot {
+    0% {
+        transform: translateX(0) translateY(0);
+        opacity: 0.8;
+    }
+    100% {
+        transform: translateX(280px) translateY(180px);
+        opacity: 0;
+    }
+}
+
+/* Estrellas de colores ocasionales */
+.star.colored {
+    animation: colorGentleTwinkle 5s infinite;
+}
+
+@keyframes colorGentleTwinkle {
+    0% {
+        background: white;
+        opacity: 0.3;
+    }
+    33% {
+        background: #ff6b6b;
+        opacity: 0.9;
+    }
+    66% {
+        background: #4ecdc4;
+        opacity: 0.8;
+    }
+    100% {
+        background: white;
+        opacity: 0.3;
+    }
+}
+
+/* 🌑 CONTENEDOR */
+#app {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 90%;
+    max-width: 700px;
+    display: flex;
+    flex-direction: column;
+}
+
+/* 🎨 SCROLL PERSONALIZADO ELEGANTE - PARA TODOS LOS CONTENEDORES */
+#chat-container::-webkit-scrollbar,
+.feature-content::-webkit-scrollbar,
+.challenge-chat::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+}
+
+#chat-container::-webkit-scrollbar-track,
+.feature-content::-webkit-scrollbar-track,
+.challenge-chat::-webkit-scrollbar-track {
+    background: var(--scroll-track);
+    border-radius: 10px;
+}
+
+#chat-container::-webkit-scrollbar-thumb,
+.feature-content::-webkit-scrollbar-thumb,
+.challenge-chat::-webkit-scrollbar-thumb {
+    background: var(--scroll-thumb);
+    border-radius: 10px;
+    transition: background 0.2s ease;
+}
+
+#chat-container::-webkit-scrollbar-thumb:hover,
+.feature-content::-webkit-scrollbar-thumb:hover,
+.challenge-chat::-webkit-scrollbar-thumb:hover {
+    background: rgba(255,255,255,0.4);
+}
+
+/* Firefox scrollbar */
+#chat-container,
+.feature-content,
+.challenge-chat {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scroll-thumb) var(--scroll-track);
+}
+
+/* CHAT */
+#chat-container {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 60vh;
+    overflow-y: auto;
+    margin-bottom: 15px;
+    padding-right: 4px;
+}
+
+.message {
+    padding: 12px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.05);
+    line-height: 1.6;
+    animation: fadeInUp 0.3s ease-out;
+    word-wrap: break-word;
+    word-break: break-word;
+    white-space: normal;
+    max-width: 100%;
+    overflow-wrap: break-word;
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.user {
+    align-self: flex-end;
+    background: rgba(255,255,255,0.15);
+    max-width: 85%;
+}
+
+/* INPUT */
+.input-box {
+    display: flex;
+    align-items: center;
+    background: rgba(255,255,255,0.05);
+    border-radius: 40px;
+    padding: 12px 15px;
+    backdrop-filter: blur(10px);
+    transition: all 0.3s ease;
+}
+
+.input-box:focus-within {
+    background: rgba(255, 255, 255, 0.1);
+    box-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
+}
+
+input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: white;
+    font-size: 1rem;
+    outline: none;
+}
+
+button {
+    background: white;
+    color: black;
+    border: none;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+button:hover {
+    transform: scale(1.05);
+    background: #ddd;
+}
+
+.input-box.disabled {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+.input-box.disabled button {
+    cursor: not-allowed;
+}
+
+/* 🎯 CONTENEDORES DE FUNCIONES */
+.feature-content {
+    display: none;
+    flex-direction: column;
+    gap: 15px;
+    max-height: 60vh;
+    overflow-y: auto;
+    margin-bottom: 15px;
+    padding-right: 4px;
+}
+
+.feature-content.active {
+    display: flex;
+}
+
+.feature-card {
+    background: rgba(255,255,255,0.05);
+    border-radius: 20px;
+    padding: 20px;
+    backdrop-filter: blur(10px);
+    animation: fadeInUp 0.3s ease-out;
+}
+
+.feature-card h2 {
+    margin: 0 0 10px 0;
+    font-size: 1.3rem;
+}
+
+.feature-card p {
+    margin: 0 0 20px 0;
+    opacity: 0.7;
+    font-size: 0.9rem;
+}
+
+.input-group {
+    margin-bottom: 15px;
+}
+
+.input-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-size: 0.8rem;
+    opacity: 0.8;
+}
+
+.input-group input {
+    width: 100%;
+    padding: 12px;
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 10px;
+    color: white;
+    font-size: 1rem;
+    box-sizing: border-box;
+}
+
+.input-group input:focus {
+    outline: none;
+    border-color: rgba(255,255,255,0.5);
+}
+
+.action-btn {
+    width: 100%;
+    padding: 12px;
+    background: white;
+    color: black;
+    border: none;
+    border-radius: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-top: 10px;
+}
+
+.action-btn:hover {
+    transform: scale(1.02);
+    background: #ddd;
+}
+
+.result-card {
+    margin-top: 20px;
+    padding: 15px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 10px;
+    line-height: 1.6;
+}
+
+/* 📅 RETOS EN FORMATO CONVERSACIONAL */
+.challenge-chat {
+    max-height: 400px;
+    overflow-y: auto;
+    margin-bottom: 15px;
+    padding: 10px;
+    background: rgba(255,255,255,0.03);
+    border-radius: 15px;
+}
+
+.challenge-message {
+    padding: 12px 15px;
+    margin-bottom: 12px;
+    border-radius: 18px;
+    max-width: 85%;
+    animation: fadeInUp 0.3s ease-out;
+    line-height: 1.5;
+}
+
+.challenge-message.user {
+    background: rgba(255,255,255,0.15);
+    margin-left: auto;
+    text-align: right;
+    border-bottom-right-radius: 4px;
+}
+
+.challenge-message.bot {
+    background: rgba(78, 205, 196, 0.15);
+    margin-right: auto;
+    border-bottom-left-radius: 4px;
+}
+
+.challenge-input-box {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+#challenge-input {
+    flex: 1;
+    padding: 12px 15px;
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 25px;
+    color: white;
+    font-family: 'JetBrains Mono', monospace;
+    outline: none;
+}
+
+#challenge-input:focus {
+    border-color: #4ecdc4;
+}
+
+#challenge-send {
+    width: 45px;
+    height: 45px;
+    background: white;
+    color: black;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+#challenge-send:hover {
+    transform: scale(1.05);
+    background: #4ecdc4;
+}
+
+.streak-counter {
+    text-align: center;
+    margin-top: 15px;
+    padding: 10px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 10px;
+    font-size: 0.9rem;
+}
+
+/* 🍔 MENÚ HAMBURGUESA */
+.menu-container {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    z-index: 1000;
+}
+
+.menu-icon {
+    width: 40px;
+    height: 40px;
+    background: rgba(255,255,255,0.1);
+    backdrop-filter: blur(10px);
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    border: 1px solid rgba(255,255,255,0.2);
+}
+
+.menu-icon:hover {
+    background: rgba(255,255,255,0.2);
+    transform: scale(1.05);
+}
+
+.menu-icon span {
+    width: 22px;
+    height: 2px;
+    background: white;
+    border-radius: 2px;
+    transition: all 0.3s ease;
+}
+
+.menu-icon.active span:nth-child(1) {
+    transform: rotate(45deg) translate(6px, 6px);
+}
+
+.menu-icon.active span:nth-child(2) {
+    opacity: 0;
+}
+
+.menu-icon.active span:nth-child(3) {
+    transform: rotate(-45deg) translate(6px, -6px);
+}
+
+.menu-nav {
+    position: fixed;
+    top: 0;
+    left: -280px;
+    width: 280px;
+    height: 100vh;
+    transition: left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 999;
+}
+
+.menu-nav.open {
+    left: 0;
+}
+
+.menu-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.95);
+    backdrop-filter: blur(20px);
+    border-right: 1px solid rgba(255,255,255,0.1);
+}
+
+.menu-list {
+    position: relative;
+    list-style: none;
+    padding: 80px 20px 20px 20px;
+    margin: 0;
+    z-index: 1;
+}
+
+.menu-list li {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 15px 20px;
+    margin-bottom: 10px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    color: rgba(255,255,255,0.7);
+}
+
+.menu-list li:hover {
+    background: rgba(255,255,255,0.1);
+    transform: translateX(5px);
+    color: white;
+}
+
+.menu-list li.active {
+    background: rgba(255,255,255,0.15);
+    color: white;
+    border-left: 3px solid #4ecdc4;
+}
+
+.menu-icon-small {
+    font-size: 1.5rem;
+}
+
+.menu-text {
+    font-size: 0.9rem;
+    font-weight: 500;
+}
