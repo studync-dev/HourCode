@@ -162,7 +162,7 @@ async function getObjectAI(text) {
     }
 
     try {
-        const res = await fetch("http://localhost:3000/extract", {
+        const res = await fetch(`${BACKEND_URL}/extract`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ text })
@@ -176,7 +176,7 @@ async function getObjectAI(text) {
 
 async function getEconomicAdvice() {
     try {
-        const res = await fetch("http://localhost:3000/advice", {
+        const res = await fetch(`${BACKEND_URL}/advice`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
