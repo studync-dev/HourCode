@@ -1,7 +1,6 @@
 # Dependencias
 node_modules/
 package-lock.json
-yarn.lock
 
 # Archivos del sistema
 .DS_Store
