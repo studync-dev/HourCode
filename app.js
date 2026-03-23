@@ -1,3 +1,5 @@
+
+const BACKEND_URL = "https://hourcode.onrender.com";
 /**
  * CORE v24 - Con estrellas suaves y scrolls elegantes
  */
