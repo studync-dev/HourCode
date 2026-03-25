@@ -536,3 +536,18 @@ button:hover {
     font-size: 0.9rem;
     font-weight: 500;
 }
+/* Contador de ahorro */
+.saved-counter {
+    position: fixed;
+    top: 80px;
+    right: 20px;
+    background: rgba(78, 205, 196, 0.2);
+    backdrop-filter: blur(10px);
+    padding: 8px 16px;
+    border-radius: 40px;
+    font-size: 0.8rem;
+    font-weight: bold;
+    border: 1px solid rgba(78, 205, 196, 0.5);
+    z-index: 100;
+    animation: fadeInUp 0.3s ease-out;
+}
