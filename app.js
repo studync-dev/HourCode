@@ -1,5 +1,5 @@
 /**
- * GastoZero v3 - Con login funcional y estrellas mejoradas
+ * GastoZero v4 - Login funcionando
  */
 
 let state = {
@@ -54,14 +54,13 @@ const appDiv = document.getElementById("app");
 const loginOverlay = document.getElementById("login-overlay");
 
 // =========================
-// 🌌 ESTRELLAS DIFERENTES Y BONITAS
+// 🌌 ESTRELLAS
 // =========================
 function createStars() {
     const container = document.getElementById("stars-layer");
     if (!container) return;
     container.innerHTML = '';
     
-    // Estrellas normales (más cantidad)
     const starCount = 150;
     for (let i = 0; i < starCount; i++) {
         const star = document.createElement("div");
@@ -77,7 +76,6 @@ function createStars() {
         container.appendChild(star);
     }
     
-    // Estrellas brillantes (menos cantidad, más brillo)
     const brightCount = 40;
     for (let i = 0; i < brightCount; i++) {
         const star = document.createElement("div");
@@ -93,7 +91,6 @@ function createStars() {
     }
 }
 
-// Estrellas fugaces más elegantes
 function createShootingStar() {
     const container = document.getElementById("stars-layer");
     if (!container) return;
@@ -231,11 +228,13 @@ async function aiSpeak(messages) {
 }
 
 // =========================
-// 🤖 LLAMADA AL BACKEND (Gemini)
+// 🤖 LLAMADA AL BACKEND
 // =========================
+const BACKEND_URL = "https://hourcode.onrender.com";
+
 async function extractFromText(text) {
     try {
-        const res = await fetch("https://hourcode.onrender.com/extract", {
+        const res = await fetch(`${BACKEND_URL}/extract`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ text })
@@ -251,7 +250,7 @@ async function extractFromText(text) {
 async function getAdvice(product, price, needOrWant) {
     try {
         const userData = getUserData(state.user);
-        const res = await fetch("https://hourcode.onrender.com/advice", {
+        const res = await fetch(`${BACKEND_URL}/advice`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ 
@@ -427,7 +426,7 @@ function initMenu() {
 }
 
 // =========================
-// 👤 LOGIN FUNCIONAL
+// 👤 LOGIN FUNCIONAL (CORREGIDO)
 // =========================
 function initLogin() {
     loadUsers();
@@ -435,8 +434,21 @@ function initLogin() {
     const loginBtn = document.getElementById('login-btn');
     const usernameInput = document.getElementById('login-username');
     
-    loginBtn.addEventListener('click', () => {
+    // Verificar que los elementos existen
+    if (!loginBtn) {
+        console.error("❌ Botón login no encontrado");
+        return;
+    }
+    
+    if (!usernameInput) {
+        console.error("❌ Input username no encontrado");
+        return;
+    }
+    
+    // Función para hacer login
+    function doLogin() {
         const username = usernameInput.value.trim();
+        
         if (!username) {
             alert("✨ Por favor, escribe un nombre para comenzar");
             usernameInput.focus();
@@ -459,7 +471,7 @@ function initLogin() {
             updateHistoryDisplay();
             updateFloatingCounter();
             
-            // Mensaje de bienvenida con animación
+            // Mensaje de bienvenida
             setTimeout(() => {
                 aiSpeak([
                     `👋 ¡Hola ${username}! Soy GastoZero.`,
@@ -469,25 +481,25 @@ function initLogin() {
                 ]);
             }, 500);
         }, 300);
-    });
+    }
     
-    // Enter para enviar
+    // Evento click
+    loginBtn.addEventListener('click', doLogin);
+    
+    // Enter en el input
     usernameInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') loginBtn.click();
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            doLogin();
+        }
     });
     
-    // Pequeño efecto de focus
-    usernameInput.addEventListener('focus', () => {
-        usernameInput.parentElement.style.transform = 'scale(1.02)';
-    });
-    usernameInput.addEventListener('blur', () => {
-        usernameInput.parentElement.style.transform = 'scale(1)';
-    });
+    console.log("✅ Login inicializado correctamente");
 }
 
-// Añadir animación de fadeOut al CSS dinámicamente
-const style = document.createElement('style');
-style.textContent = `
+// Añadir animación de fadeOut al CSS
+const styleSheet = document.createElement('style');
+styleSheet.textContent = `
     @keyframes fadeOutScale {
         from {
             opacity: 1;
@@ -500,7 +512,7 @@ style.textContent = `
         }
     }
 `;
-document.head.appendChild(style);
+document.head.appendChild(styleSheet);
 
 // =========================
 // 🎯 INICIALIZAR
@@ -517,7 +529,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     
-    // Auto-scroll en móvil al abrir teclado
+    // Auto-scroll en móvil
     window.addEventListener('resize', () => {
         setTimeout(scrollToBottom, 100);
     });
