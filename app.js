@@ -341,4 +341,184 @@ async function handleFlow(input) {
                 `¿Quieres analizar otro gasto? Escríbeme lo que estás pensando comprar.`
             ]);
         } else if (lower.includes("comprar") || lower.includes("lo compro") || lower.includes("si") || lower.includes("compro")) {
-            addToHistory
+            addToHistory(state.itemName, state.itemPrice, "comprado");
+            
+            await aiSpeak([
+                `👍 Está bien. Es tu decisión.`,
+                `💡 Consejo: Antes de comprar, espera 24 horas. Si sigues queriéndolo, adelante.`,
+                `¿Quieres analizar otro gasto? Escríbeme lo que estás pensando comprar.`
+            ]);
+        } else {
+            await aiSpeak(["No te he entendido. ¿Comprar o no comprar?"]);
+            return;
+        }
+        
+        state.step = 'START';
+    }
+}
+
+// =========================
+// 🎯 ENVIAR MENSAJE
+// =========================
+async function sendMessage() {
+    if (state.isTyping) return;
+    if (!userInput.value.trim()) return;
+
+    const message = userInput.value.trim();
+    chat.style.display = "flex";
+    const userMsg = document.createElement("div");
+    userMsg.className = "message user";
+    userMsg.innerText = message;
+    chat.appendChild(userMsg);
+    scrollToBottom();
+    userInput.value = "";
+    setInputEnabled(false);
+    
+    try {
+        await handleFlow(message);
+    } catch (error) {
+        console.error(error);
+        await aiSpeak(["Ha ocurrido un error. Inténtalo de nuevo."]);
+    }
+    setInputEnabled(true);
+}
+
+// =========================
+// 🍔 MENÚ
+// =========================
+function initMenu() {
+    const menuIcon = document.getElementById('menu-icon');
+    const menuNav = document.getElementById('menu-nav');
+    const menuItems = document.querySelectorAll('.menu-list li');
+    const featureContents = document.querySelectorAll('.feature-content');
+    const inputBoxEl = document.getElementById('input-box');
+    
+    if (menuIcon && menuNav) {
+        menuIcon.addEventListener('click', () => {
+            menuIcon.classList.toggle('active');
+            menuNav.classList.toggle('open');
+        });
+        document.addEventListener('click', (e) => {
+            if (!menuIcon.contains(e.target) && !menuNav.contains(e.target) && menuNav.classList.contains('open')) {
+                menuIcon.classList.remove('active');
+                menuNav.classList.remove('open');
+            }
+        });
+    }
+    
+    menuItems.forEach(item => {
+        item.addEventListener('click', () => {
+            const feature = item.dataset.feature;
+            menuItems.forEach(i => i.classList.remove('active'));
+            item.classList.add('active');
+            featureContents.forEach(content => content.classList.remove('active'));
+            const activeContent = document.getElementById(`${feature}-container`);
+            if (activeContent) activeContent.classList.add('active');
+            if (inputBoxEl) inputBoxEl.style.display = feature === 'chat' ? 'flex' : 'none';
+            if (menuIcon && menuNav) {
+                menuIcon.classList.remove('active');
+                menuNav.classList.remove('open');
+            }
+            
+            if (feature === 'history') updateHistoryDisplay();
+            if (feature === 'stats') updateStatsDisplay();
+        });
+    });
+}
+
+// =========================
+// 👤 LOGIN FUNCIONAL
+// =========================
+function initLogin() {
+    loadUsers();
+    
+    const loginBtn = document.getElementById('login-btn');
+    const usernameInput = document.getElementById('login-username');
+    
+    loginBtn.addEventListener('click', () => {
+        const username = usernameInput.value.trim();
+        if (!username) {
+            alert("✨ Por favor, escribe un nombre para comenzar");
+            usernameInput.focus();
+            return;
+        }
+        
+        // Guardar usuario
+        state.user = username;
+        const userData = getUserData(username);
+        
+        // Animación de salida
+        loginOverlay.style.animation = 'fadeOutScale 0.3s ease forwards';
+        
+        setTimeout(() => {
+            loginOverlay.style.display = 'none';
+            appDiv.style.display = 'flex';
+            
+            // Actualizar displays
+            updateStatsDisplay();
+            updateHistoryDisplay();
+            updateFloatingCounter();
+            
+            // Mensaje de bienvenida con animación
+            setTimeout(() => {
+                aiSpeak([
+                    `👋 ¡Hola ${username}! Soy GastoZero.`,
+                    `Te ayudo a pensar antes de comprar.`,
+                    `Hasta ahora has ahorrado ${userData.savedTotal}€. ¡Sigue así!`,
+                    `Cuéntame, ¿qué estás pensando comprar y cuánto cuesta?`
+                ]);
+            }, 500);
+        }, 300);
+    });
+    
+    // Enter para enviar
+    usernameInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') loginBtn.click();
+    });
+    
+    // Pequeño efecto de focus
+    usernameInput.addEventListener('focus', () => {
+        usernameInput.parentElement.style.transform = 'scale(1.02)';
+    });
+    usernameInput.addEventListener('blur', () => {
+        usernameInput.parentElement.style.transform = 'scale(1)';
+    });
+}
+
+// Añadir animación de fadeOut al CSS dinámicamente
+const style = document.createElement('style');
+style.textContent = `
+    @keyframes fadeOutScale {
+        from {
+            opacity: 1;
+            transform: scale(1);
+        }
+        to {
+            opacity: 0;
+            transform: scale(0.95);
+            visibility: hidden;
+        }
+    }
+`;
+document.head.appendChild(style);
+
+// =========================
+// 🎯 INICIALIZAR
+// =========================
+document.addEventListener('DOMContentLoaded', () => {
+    initMenu();
+    initLogin();
+    
+    sendBtn.onclick = sendMessage;
+    userInput.addEventListener("keypress", (e) => { 
+        if (e.key === "Enter" && !state.isTyping) {
+            e.preventDefault();
+            sendMessage();
+        }
+    });
+    
+    // Auto-scroll en móvil al abrir teclado
+    window.addEventListener('resize', () => {
+        setTimeout(scrollToBottom, 100);
+    });
+});
