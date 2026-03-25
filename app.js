@@ -1,5 +1,5 @@
 /**
- * GastoZero v4 - Login funcionando
+ * GastoZero v5 - Con fallback local y mejor detección de errores
  */
 
 let state = {
@@ -228,21 +228,88 @@ async function aiSpeak(messages) {
 }
 
 // =========================
-// 🤖 LLAMADA AL BACKEND
+// 🤖 LLAMADA AL BACKEND CON FALLBACK LOCAL
 // =========================
 const BACKEND_URL = "https://hourcode.onrender.com";
 
+// Lista de productos comunes en español
+const productosComunes = [
+    "coche", "carro", "auto", "vehículo",
+    "ordenador", "portátil", "pc", "computadora",
+    "cascos", "auriculares", "audífonos",
+    "móvil", "teléfono", "iphone", "android",
+    "silla", "mesa", "escritorio",
+    "teclado", "ratón", "monitor",
+    "consola", "ps5", "xbox", "nintendo",
+    "zapatos", "zapatillas", "ropa",
+    "libro", "curso", "clase"
+];
+
+function extractLocalProduct(text) {
+    const lowerText = text.toLowerCase();
+    for (let producto of productosComunes) {
+        if (lowerText.includes(producto)) {
+            return producto;
+        }
+    }
+    return "producto";
+}
+
+function extractLocalPrice(text) {
+    // Buscar números con € o euros
+    let match = text.match(/(\d+)\s*(€|euros?|eur)/i);
+    if (match) return parseFloat(match[1]);
+    
+    // Buscar números sueltos
+    match = text.match(/(\d+)/);
+    if (match) return parseFloat(match[1]);
+    
+    return 0;
+}
+
 async function extractFromText(text) {
+    // FALLBACK LOCAL: extraer precio manualmente
+    const localPrice = extractLocalPrice(text);
+    const localProduct = extractLocalProduct(text);
+    
+    console.log("🔍 Fallback local - Producto:", localProduct, "Precio:", localPrice);
+    
     try {
         const res = await fetch(`${BACKEND_URL}/extract`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ text })
         });
+        
+        if (!res.ok) {
+            console.log("⚠️ Backend no responde, usando fallback local");
+            if (localPrice > 0) {
+                return { product: localProduct, price: localPrice };
+            }
+            return { product: "algo", price: 0 };
+        }
+        
         const data = await res.json();
-        return { product: data.object, price: data.price };
+        console.log("🤖 IA devolvió:", data);
+        
+        // Si la IA devuelve algo válido, usarlo
+        if (data.price > 0 && data.object !== "algo" && data.object !== "producto") {
+            return { product: data.object, price: data.price };
+        }
+        
+        // Si no, usar el fallback local
+        if (localPrice > 0) {
+            console.log("🔄 Usando fallback local porque IA no detectó bien");
+            return { product: localProduct, price: localPrice };
+        }
+        
+        return { product: "algo", price: 0 };
+        
     } catch (e) {
-        console.error("Error backend:", e);
+        console.error("❌ Error backend, usando fallback local:", e);
+        if (localPrice > 0) {
+            return { product: localProduct, price: localPrice };
+        }
         return { product: "algo", price: 0 };
     }
 }
@@ -260,6 +327,11 @@ async function getAdvice(product, price, needOrWant) {
                 saved: userData.savedTotal 
             })
         });
+        
+        if (!res.ok) {
+            throw new Error("Backend error");
+        }
+        
         const data = await res.json();
         
         userData.tipsCount++;
@@ -268,7 +340,15 @@ async function getAdvice(product, price, needOrWant) {
         
         return data.advice;
     } catch (e) {
-        return "¿Realmente necesitas esto? Espera 24 horas antes de decidir. 💭";
+        console.error("Error consejo, usando fallback:", e);
+        // Consejos de fallback
+        const consejos = [
+            `💭 Piensa bien si realmente necesitas ${product}. Espera 24 horas y decide.`,
+            `💰 Gastar ${price}€ en ${product} significa ${Math.floor(price / 10)} horas de trabajo. ¿Vale la pena?`,
+            `🎯 Si no compras ${product}, podrías ahorrar ${price}€ para tu próxima meta.`,
+            `🤔 ¿Es ${product} una necesidad real o un capricho momentáneo?`
+        ];
+        return consejos[Math.floor(Math.random() * consejos.length)];
     }
 }
 
@@ -280,8 +360,13 @@ async function handleFlow(input) {
     if (state.step === 'START') {
         const { product, price } = await extractFromText(input);
         
+        console.log("📦 Resultado final:", { product, price });
+        
         if (price === 0) {
-            await aiSpeak(["No veo un precio claro. Ejemplo: 'unos cascos que cuestan 50€'"]);
+            await aiSpeak([
+                "No veo un precio claro. Ejemplo: 'unos cascos que cuestan 50€'",
+                "¿Puedes decirme cuánto cuesta y qué es?"
+            ]);
             return;
         }
         
@@ -298,7 +383,7 @@ async function handleFlow(input) {
     
     else if (state.step === 'ASK_NEED') {
         const lower = input.toLowerCase();
-        if (lower.includes("necesito") || lower.includes("necesidad") || lower.includes("se me rompió") || lower.includes("sí o sí") || lower.includes("si o si")) {
+        if (lower.includes("necesito") || lower.includes("necesidad") || lower.includes("se me rompió") || lower.includes("sí o sí") || lower.includes("si o si") || lower.includes("obligatorio") || lower.includes("imprescindible")) {
             state.needOrWant = "necesidad";
         } else {
             state.needOrWant = "capricho";
@@ -322,7 +407,7 @@ async function handleFlow(input) {
         const lower = input.toLowerCase();
         const userData = getUserData(state.user);
         
-        if (lower.includes("no comprar") || lower.includes("no lo compro") || lower.includes("evitar") || lower.includes("no compro")) {
+        if (lower.includes("no comprar") || lower.includes("no lo compro") || lower.includes("evitar") || lower.includes("no compro") || lower.includes("no lo voy a comprar")) {
             userData.savedTotal += state.itemPrice;
             userData.avoidedCount++;
             updateUserData(state.user, { 
@@ -339,7 +424,7 @@ async function handleFlow(input) {
                 `🔥 Racha: ${userData.streak} días seguidos`,
                 `¿Quieres analizar otro gasto? Escríbeme lo que estás pensando comprar.`
             ]);
-        } else if (lower.includes("comprar") || lower.includes("lo compro") || lower.includes("si") || lower.includes("compro")) {
+        } else if (lower.includes("comprar") || lower.includes("lo compro") || lower.includes("si") || lower.includes("compro") || lower.includes("lo voy a comprar")) {
             addToHistory(state.itemName, state.itemPrice, "comprado");
             
             await aiSpeak([
@@ -348,7 +433,7 @@ async function handleFlow(input) {
                 `¿Quieres analizar otro gasto? Escríbeme lo que estás pensando comprar.`
             ]);
         } else {
-            await aiSpeak(["No te he entendido. ¿Comprar o no comprar?"]);
+            await aiSpeak(["No te he entendido. ¿Comprar o no comprar? Responde 'comprar' o 'no comprar'"]);
             return;
         }
         
@@ -426,7 +511,7 @@ function initMenu() {
 }
 
 // =========================
-// 👤 LOGIN FUNCIONAL (CORREGIDO)
+// 👤 LOGIN FUNCIONAL
 // =========================
 function initLogin() {
     loadUsers();
@@ -434,7 +519,6 @@ function initLogin() {
     const loginBtn = document.getElementById('login-btn');
     const usernameInput = document.getElementById('login-username');
     
-    // Verificar que los elementos existen
     if (!loginBtn) {
         console.error("❌ Botón login no encontrado");
         return;
@@ -445,7 +529,6 @@ function initLogin() {
         return;
     }
     
-    // Función para hacer login
     function doLogin() {
         const username = usernameInput.value.trim();
         
@@ -455,23 +538,19 @@ function initLogin() {
             return;
         }
         
-        // Guardar usuario
         state.user = username;
         const userData = getUserData(username);
         
-        // Animación de salida
         loginOverlay.style.animation = 'fadeOutScale 0.3s ease forwards';
         
         setTimeout(() => {
             loginOverlay.style.display = 'none';
             appDiv.style.display = 'flex';
             
-            // Actualizar displays
             updateStatsDisplay();
             updateHistoryDisplay();
             updateFloatingCounter();
             
-            // Mensaje de bienvenida
             setTimeout(() => {
                 aiSpeak([
                     `👋 ¡Hola ${username}! Soy GastoZero.`,
@@ -483,10 +562,7 @@ function initLogin() {
         }, 300);
     }
     
-    // Evento click
     loginBtn.addEventListener('click', doLogin);
-    
-    // Enter en el input
     usernameInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') {
             e.preventDefault();
@@ -497,19 +573,12 @@ function initLogin() {
     console.log("✅ Login inicializado correctamente");
 }
 
-// Añadir animación de fadeOut al CSS
+// Añadir animación
 const styleSheet = document.createElement('style');
 styleSheet.textContent = `
     @keyframes fadeOutScale {
-        from {
-            opacity: 1;
-            transform: scale(1);
-        }
-        to {
-            opacity: 0;
-            transform: scale(0.95);
-            visibility: hidden;
-        }
+        from { opacity: 1; transform: scale(1); }
+        to { opacity: 0; transform: scale(0.95); visibility: hidden; }
     }
 `;
 document.head.appendChild(styleSheet);
@@ -529,7 +598,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     
-    // Auto-scroll en móvil
     window.addEventListener('resize', () => {
         setTimeout(scrollToBottom, 100);
     });
