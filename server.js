@@ -7,7 +7,7 @@ app.use(cors());
 app.use(express.json());
 
 // 🔑 PON AQUÍ TU API KEY DE GEMINI
-const GEMINI_API_KEY = "AIzaSyDOeMUQpzYAwDzGaeRMK5i-edM8opRvcrY";
+const GEMINI_API_KEY = "TU_API_KEY_AQUI";
 
 // Ruta para extraer producto y precio
 app.post("/extract", async (req, res) => {
@@ -22,36 +22,52 @@ app.post("/extract", async (req, res) => {
             body: JSON.stringify({
                 contents: [{
                     parts: [{
-                        text: `Eres un extractor de productos. Analiza este texto y responde SOLO con el producto y el precio en este formato exacto:
+                        text: `Eres un extractor de productos en ESPAÑOL. Analiza este texto y responde SOLO con el producto y el precio en este formato exacto:
 
 PRODUCTO: [nombre del producto]
 PRECIO: [número]
 
-Reglas:
-- El producto puede tener 1-3 palabras
+REGLAS IMPORTANTES:
+- Perdona TODAS las faltas de ortografía (ej: "cuestas" = cuesta, "carrro" = carro, "coche" = coche)
+- El producto puede ser de 1 a 3 palabras
+- Reconoce sinónimos comunes en España:
+  * "carro" = coche
+  * "ordenata" = ordenador
+  * "móvi" = móvil
+  * "cascos" = auriculares
+- Si el precio está en palabras (ej: "ochenta euros"), conviértelo a número
 - Si no ves un precio claro, pon PRECIO: 0
-- Perdona faltas de ortografía (ej: "cuestas" = cuesta)
-- Ignora nombres, edades, ciudades
+- Ignora nombres, edades, ciudades y conversación previa
 
 Texto: "${text}"`
                     }]
                 }],
                 generationConfig: {
                     temperature: 0,
-                    maxOutputTokens: 50
+                    maxOutputTokens: 80
                 }
             })
         });
 
         const data = await response.json();
+        
+        if (!data.candidates || !data.candidates[0]) {
+            console.error("Error respuesta Gemini:", data);
+            return res.json({ object: "algo", price: 0 });
+        }
+        
         const respuesta = data.candidates[0].content.parts[0].text;
+        console.log("📦 Respuesta Gemini:", respuesta);
         
         // Extraer producto y precio
         const productMatch = respuesta.match(/PRODUCTO:\s*(.+)/i);
         const priceMatch = respuesta.match(/PRECIO:\s*(\d+)/i);
         
-        const producto = productMatch ? productMatch[1].trim().toLowerCase() : "algo";
+        let producto = productMatch ? productMatch[1].trim().toLowerCase() : "algo";
         const precio = priceMatch ? parseFloat(priceMatch[1]) : 0;
+        
+        // Limpiar producto (quitar palabras raras)
+        producto = producto.replace(/[^\w\sáéíóúñ]/g, "").trim();
         
         console.log("🧠 Extraído:", { producto, precio });
         res.json({ object: producto, price: precio });
@@ -64,10 +80,10 @@ Texto: "${text}"`
 
 // Ruta para el consejo amigable
 app.post("/advice", async (req, res) => {
-    const { product, price, needOrWant, saved, alternatives } = req.body;
+    const { product, price, needOrWant, saved } = req.body;
     
     const prompt = `
-Eres "GastoZero", un asistente amigable que ayuda a evitar gastos innecesarios.
+Eres "GastoZero", un asistente amigable que ayuda a evitar gastos innecesarios. Hablas español de España.
 
 Contexto:
 - Producto: ${product} (${price}€)
@@ -79,6 +95,8 @@ Reglas:
 - Sé empático, no sermonees
 - Usa emojis con moderación
 - Da un consejo útil y breve (máximo 3 líneas)
+- Si es un capricho, sugiere esperar 24 horas
+- Si es una necesidad, da consejos para comprar inteligente
 - Termina con una pregunta que invite a reflexionar
 
 Responde:`;
@@ -99,6 +117,12 @@ Responde:`;
         });
 
         const data = await response.json();
+        
+        if (!data.candidates || !data.candidates[0]) {
+            console.error("Error consejo Gemini:", data);
+            return res.json({ advice: "¿Realmente necesitas esto? Espera 24 horas antes de decidir. 💭" });
+        }
+        
         const advice = data.candidates[0].content.parts[0].text;
         
         console.log("💡 Consejo:", advice);
@@ -106,8 +130,13 @@ Responde:`;
 
     } catch (err) {
         console.error("Error consejo:", err);
-        res.json({ advice: "¿Realmente necesitas esto o es un impulso? Espera 24 horas y decide." });
+        res.json({ advice: "¿Realmente necesitas esto? Espera 24 horas antes de decidir. 💭" });
     }
+});
+
+// Ruta de prueba para ver si el servidor está vivo
+app.get("/", (req, res) => {
+    res.json({ status: "ok", message: "GastoZero API funcionando" });
 });
 
 app.listen(3000, () => {
