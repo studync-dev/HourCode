@@ -632,3 +632,16 @@ body {
         font-size: 0.75rem;
     }
 }
+/* Asegurar que al cambiar de pestaña, solo se vea una */
+.feature-content {
+    display: none !important;
+}
+
+.feature-content.active {
+    display: flex !important;
+}
+
+/* Ocultar el chat cuando no está activo */
+#chat-container:not(.active) {
+    display: none !important;
+}
