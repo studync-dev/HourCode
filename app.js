@@ -1,5 +1,5 @@
 /**
- * GastoZero v7 - Con pestañas que se ocultan correctamente y lógica mejorada
+ * GastoZero v8 - Con contexto persistente y mejor detección
  */
 
 let state = {
@@ -9,7 +9,9 @@ let state = {
     needOrWant: '',
     user: null,
     isTyping: false,
-    lastItem: null
+    lastItem: null,
+    lastPrice: 0,
+    waitingForDecision: false  // Para manejar respuestas fuera de flujo
 };
 
 // Datos de usuarios (localStorage)
@@ -231,36 +233,69 @@ async function aiSpeak(messages) {
 }
 
 // =========================
-// 🤖 DETECCIÓN MEJORADA
+// 🤖 DETECCIÓN MEJORADA DE PRODUCTOS
 // =========================
 const productosDetallados = {
-    "ferrari": "Ferrari", "lamborghini": "Lamborghini", "porsche": "Porsche",
+    // Coches de lujo
+    "lambo": "Lamborghini", "lamborghini": "Lamborghini",
+    "ferrari": "Ferrari", "porsche": "Porsche", "bugatti": "Bugatti",
     "coche": "coche", "carro": "coche", "auto": "coche",
+    // Tecnología
     "iphone": "iPhone", "samsung": "Samsung", "macbook": "MacBook",
     "ordenador": "ordenador", "portátil": "portátil", "pc": "ordenador",
     "cascos": "cascos", "auriculares": "auriculares",
+    // Moda
     "zapatos": "zapatos", "zapatillas": "zapatillas",
+    // Muebles
     "silla": "silla", "teclado": "teclado", "ratón": "ratón", "monitor": "monitor"
 };
 
 function detectarProducto(texto) {
     const lower = texto.toLowerCase();
-    for (let [key, value] of Object.entries(productosDetallados)) {
-        if (lower.includes(key)) return value;
+    
+    // Detectar modelos específicos (M1, M2, etc)
+    const modelMatch = texto.match(/([A-Za-z]+)\s+(M\d+)/i);
+    if (modelMatch) {
+        const marca = modelMatch[1];
+        const modelo = modelMatch[2];
+        for (let [key, value] of Object.entries(productosDetallados)) {
+            if (lower.includes(key)) {
+                return `${value} ${modelo}`;
+            }
+        }
+        return `${marca} ${modelo}`;
     }
+    
+    // Detectar productos normales
+    for (let [key, value] of Object.entries(productosDetallados)) {
+        if (lower.includes(key)) {
+            return value;
+        }
+    }
+    
+    // Buscar la última palabra relevante
     const palabras = texto.split(/\s+/);
     const palabrasValidas = palabras.filter(p => 
-        !["un", "una", "el", "la", "los", "las", "comprar", "compro", "quiero", "necesito", "me", "de", "que"].includes(p.toLowerCase())
+        !["un", "una", "el", "la", "los", "las", "comprar", "compro", "quiero", "necesito", 
+          "me", "de", "que", "top", "guapo", "chaval", "esta", "tope", "por", "cuesta", "cuestas"].includes(p.toLowerCase())
     );
-    if (palabrasValidas.length > 0) return palabrasValidas[palabrasValidas.length - 1];
+    
+    if (palabrasValidas.length > 0) {
+        return palabrasValidas[palabrasValidas.length - 1];
+    }
+    
     return "producto";
 }
 
 function extractLocalPrice(text) {
+    // Buscar números con € o euros
     let match = text.match(/(\d+)\s*(€|euros?|eur)/i);
     if (match) return parseFloat(match[1]);
+    
+    // Buscar números sueltos
     const numbers = text.match(/\d+/g);
     if (numbers && numbers.length > 0) return parseFloat(numbers[numbers.length - 1]);
+    
     return 0;
 }
 
@@ -273,7 +308,8 @@ const consejosLocales = {
         (product, price, user) => `¡Vaya caprichazo, ${user}! Un ${product} de ${price}€. La regla de las 48 horas: espera 2 días. Si aún lo quieres, cómpralo sin remordimientos.`,
         (product, price, user) => `${user}, con ${price}€ podrías hacer un curso online, un viaje de fin de semana o invertirlo. ¿Qué prefieres, ${product} o una experiencia inolvidable?`,
         (product, price, user) => `Los caprichos están bien si los eliges con conciencia. ${user}, pregúntate: ¿este ${product} te hará más feliz dentro de un mes o será un objeto olvidado?`,
-        (product, price, user) => `💰 ${price}€ no es una broma. ${user}, antes de comprar ${product}, piensa si hay algo que realmente necesitas más o si puedes encontrar una opción más barata.`
+        (product, price, user) => `💰 ${price}€ no es una broma. ${user}, antes de comprar ${product}, piensa si hay algo que realmente necesitas más o si puedes encontrar una opción más barata.`,
+        (product, price, user) => `Sabes qué, ${user}? Un ${product} de ${price}€ es un gustazo. Pero piensa: ¿lo usarás todos los días o será un capricho de una semana?`
     ],
     necesidad: [
         (product, price, user) => `¡Bien pensado, ${user}! Si necesitas ${product}, lo importante es comprar bien. ¿Has comparado precios en 2 o 3 sitios diferentes?`,
@@ -298,20 +334,38 @@ async function extractFromText(text) {
     const localPrice = extractLocalPrice(text);
     const localProduct = detectarProducto(text);
     
+    console.log("🔍 Local:", { localProduct, localPrice });
+    
     try {
         const res = await fetch(`${BACKEND_URL}/extract`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ text })
         });
-        if (!res.ok) throw new Error("Backend error");
+        
+        if (!res.ok) {
+            console.log("⚠️ Backend error, usando local");
+            if (localPrice > 0) return { product: localProduct, price: localPrice };
+            return { product: "producto", price: 0 };
+        }
+        
         const data = await res.json();
-        if (data.price > 0 && data.object !== "desconocido") {
+        console.log("🤖 IA:", data);
+        
+        // Si la IA devuelve algo útil
+        if (data.price > 0 && data.object !== "desconocido" && data.object !== "algo") {
             return { product: data.object, price: data.price };
         }
-        if (localPrice > 0) return { product: localProduct, price: localPrice };
+        
+        // Usar detección local si la IA falla
+        if (localPrice > 0) {
+            return { product: localProduct, price: localPrice };
+        }
+        
         return { product: "producto", price: 0 };
+        
     } catch (e) {
+        console.log("❌ Error conexión:", e);
         if (localPrice > 0) return { product: localProduct, price: localPrice };
         return { product: "producto", price: 0 };
     }
@@ -330,65 +384,37 @@ async function getAdvice(product, price, needOrWant) {
                 streak: userData.streak
             })
         });
+        
         if (!res.ok) throw new Error("Backend error");
+        
         const data = await res.json();
+        
+        if (!data.advice || data.advice.includes("undefined")) {
+            throw new Error("Consejo inválido");
+        }
+        
         userData.tipsCount++;
         updateUserData(state.user, { tipsCount: userData.tipsCount });
         updateStatsDisplay();
         return data.advice;
+        
     } catch (e) {
+        console.log("⚠️ Usando consejo local");
         return getLocalAdvice(product, price, needOrWant, state.user);
     }
 }
 
 // =========================
-// 🔄 FLUJO PRINCIPAL
+// 🔄 FLUJO PRINCIPAL CON CONTEXTO
 // =========================
 async function handleFlow(input) {
     const userData = getUserData(state.user);
+    const lowerInput = input.toLowerCase();
     
-    if (state.step === 'START') {
-        const { product, price } = await extractFromText(input);
-        
-        if (price === 0) {
-            await aiSpeak([`🤔 ${state.user}, no veo el precio. ¿Puedes decirme cuánto cuesta? Ejemplo: "un Ferrari cuesta 8000€"`]);
-            return;
-        }
-        
-        state.itemName = product;
-        state.itemPrice = price;
-        state.step = 'ASK_NEED';
-        
-        await aiSpeak([
-            `✅ Entendido: ${product} por ${price}€.`,
-            `Ahora cuéntame, ${state.user}...`,
-            `¿Es algo que NECESITAS sí o sí (se te rompió, es imprescindible) o es más un CAPRICHO que te apetece?`
-        ]);
-    }
-    
-    else if (state.step === 'ASK_NEED') {
-        const lower = input.toLowerCase();
-        const esCapricho = lower.includes("capricho") || lower.includes("apetece") || lower.includes("gusta") || lower.includes("quiero") || lower.includes("deseo");
-        const esNecesidad = lower.includes("necesito") || lower.includes("necesidad") || lower.includes("rompió") || lower.includes("obligatorio") || lower.includes("imprescindible");
-        
-        state.needOrWant = esNecesidad ? "necesidad" : "capricho";
-        state.step = 'ADVICE';
-        
-        await aiSpeak(["🤔 Analizando..."]);
-        const advice = await getAdvice(state.itemName, state.itemPrice, state.needOrWant);
-        await aiSpeak([advice]);
-        
-        await aiSpeak([
-            `💡 Si decides NO comprar ${state.itemName}, sumarás ${state.itemPrice}€ a tu ahorro.`,
-            `¿Qué decides, ${state.user}? Responde "comprar" o "no comprar"`
-        ]);
-        state.step = 'DECISION';
-    }
-    
-    else if (state.step === 'DECISION') {
-        const lower = input.toLowerCase();
-        
-        if (lower.includes("no comprar") || lower.includes("no lo compro") || lower.includes("evitar") || lower.includes("ahorrar")) {
+    // Manejar decisiones fuera de flujo (como "al final he decidido no comprarlo")
+    if (state.waitingForDecision) {
+        if (lowerInput.includes("no comprar") || lowerInput.includes("no compro") || lowerInput.includes("no lo compro") || lowerInput.includes("no voy a comprar")) {
+            // Simular respuesta de no compra
             userData.savedTotal += state.itemPrice;
             userData.avoidedCount++;
             const nuevoStreak = updateStreak();
@@ -397,12 +423,100 @@ async function handleFlow(input) {
             addToHistory(state.itemName, state.itemPrice, "evitado");
             
             await aiSpeak([
-                `🎉 ¡Excelente decisión, ${state.user}! Has evitado gastar ${state.itemPrice}€.`,
+                `🎉 ¡Excelente decisión, ${state.user}! Has evitado gastar ${state.itemPrice}€ en ${state.itemName}.`,
                 `💰 Total ahorrado: ${userData.savedTotal}€`,
                 `🔥 Llevas ${nuevoStreak} día${nuevoStreak !== 1 ? 's' : ''} reflexionando. ¡Qué disciplina!`,
                 `¿Quieres analizar otro gasto? Escríbeme lo que estás pensando comprar.`
             ]);
-        } else if (lower.includes("comprar") || lower.includes("lo compro") || lower.includes("si")) {
+            state.step = 'START';
+            state.waitingForDecision = false;
+            return;
+        } else if (lowerInput.includes("comprar") || lowerInput.includes("lo compro")) {
+            addToHistory(state.itemName, state.itemPrice, "comprado");
+            await aiSpeak([
+                `👍 Vale, ${state.user}. Es tu decisión.`,
+                `💡 Consejo: espera 24 horas antes de comprar. Si aún lo quieres, adelante sin culpa.`,
+                `¿Quieres analizar otro gasto? Escríbeme lo que estás pensando comprar.`
+            ]);
+            state.step = 'START';
+            state.waitingForDecision = false;
+            return;
+        }
+    }
+    
+    // FLUJO NORMAL
+    if (state.step === 'START') {
+        const { product, price } = await extractFromText(input);
+        
+        if (price === 0) {
+            await aiSpeak([
+                `🤔 ${state.user}, no veo el precio. ¿Puedes decirme cuánto cuesta?`,
+                `Ejemplo: "un Lamborghini cuesta 8000€" o "un Ferrari de 8000€"`
+            ]);
+            return;
+        }
+        
+        // Guardar contexto
+        state.itemName = product;
+        state.itemPrice = price;
+        state.step = 'ASK_NEED';
+        
+        // Mensaje especial para coches de lujo
+        const esCocheLujo = ["ferrari", "lamborghini", "porsche", "bugatti"].some(p => product.toLowerCase().includes(p));
+        
+        if (esCocheLujo) {
+            await aiSpeak([
+                `✨ ¡Vaya! Un ${product} de ${price}€. ¡Qué pasada, ${state.user}!`,
+                `Antes de lanzarte a por semejante máquina...`,
+                `¿Es una necesidad real o un caprichazo que te haría feliz?`
+            ]);
+        } else {
+            await aiSpeak([
+                `✅ Entendido: ${product} por ${price}€.`,
+                `Ahora cuéntame, ${state.user}...`,
+                `¿Es algo que NECESITAS sí o sí (se te rompió, es imprescindible) o es más un CAPRICHO que te apetece?`
+            ]);
+        }
+    }
+    
+    else if (state.step === 'ASK_NEED') {
+        const lower = input.toLowerCase();
+        const esCapricho = lower.includes("capricho") || lower.includes("apetece") || lower.includes("gusta") || lower.includes("quiero") || lower.includes("deseo") || lower.includes("caprichito");
+        const esNecesidad = lower.includes("necesito") || lower.includes("necesidad") || lower.includes("rompió") || lower.includes("obligatorio") || lower.includes("imprescindible");
+        
+        state.needOrWant = esNecesidad ? "necesidad" : "capricho";
+        state.step = 'ADVICE';
+        
+        await aiSpeak(["🤔 Analizando tu situación..."]);
+        const advice = await getAdvice(state.itemName, state.itemPrice, state.needOrWant);
+        await aiSpeak([advice]);
+        
+        await aiSpeak([
+            `💡 Si decides NO comprar ${state.itemName}, sumarás ${state.itemPrice}€ a tu ahorro.`,
+            `¿Qué decides, ${state.user}? Responde "comprar" o "no comprar"`
+        ]);
+        state.step = 'DECISION';
+        state.waitingForDecision = true;  // Activar el modo de espera de decisión
+    }
+    
+    else if (state.step === 'DECISION') {
+        const lower = input.toLowerCase();
+        
+        if (lower.includes("no comprar") || lower.includes("no lo compro") || lower.includes("evitar") || lower.includes("ahorrar") || lower.includes("no compro")) {
+            userData.savedTotal += state.itemPrice;
+            userData.avoidedCount++;
+            const nuevoStreak = updateStreak();
+            updateUserData(state.user, { savedTotal: userData.savedTotal, avoidedCount: userData.avoidedCount });
+            updateStatsDisplay();
+            addToHistory(state.itemName, state.itemPrice, "evitado");
+            
+            await aiSpeak([
+                `🎉 ¡Excelente decisión, ${state.user}! Has evitado gastar ${state.itemPrice}€ en ${state.itemName}.`,
+                `💰 Total ahorrado: ${userData.savedTotal}€`,
+                `🔥 Llevas ${nuevoStreak} día${nuevoStreak !== 1 ? 's' : ''} reflexionando. ¡Qué disciplina!`,
+                `¿Quieres analizar otro gasto? Escríbeme lo que estás pensando comprar.`
+            ]);
+        } else if (lower.includes("comprar") || lower.includes("lo compro") || lower.includes("si") || lower.includes("compro")) {
             addToHistory(state.itemName, state.itemPrice, "comprado");
             await aiSpeak([
                 `👍 Vale, ${state.user}. Es tu decisión.`,
@@ -410,11 +524,18 @@ async function handleFlow(input) {
                 `¿Quieres analizar otro gasto? Escríbeme lo que estás pensando comprar.`
             ]);
         } else {
-            await aiSpeak([`${state.user}, no te he entendido. ¿Comprar o no comprar?`]);
+            await aiSpeak([
+                `${state.user}, no te he entendido.`,
+                `¿Quieres COMPRAR ${state.itemName} o NO COMPRARLO?`,
+                `Responde "comprar" o "no comprar"`
+            ]);
             return;
         }
+        
         state.step = 'START';
+        state.waitingForDecision = false;
         state.lastItem = state.itemName;
+        state.lastPrice = state.itemPrice;
     }
 }
 
@@ -445,7 +566,7 @@ async function sendMessage() {
 }
 
 // =========================
-// 🍔 MENÚ (CON OCULTACIÓN CORRECTA)
+// 🍔 MENÚ
 // =========================
 function initMenu() {
     const menuIcon = document.getElementById('menu-icon');
@@ -474,27 +595,22 @@ function initMenu() {
             menuItems.forEach(i => i.classList.remove('active'));
             item.classList.add('active');
             
-            // Ocultar TODOS los contenidos
             featureContents.forEach(content => {
                 content.classList.remove('active');
             });
             
-            // Mostrar SOLO el seleccionado
             const activeContent = document.getElementById(`${feature}-container`);
             if (activeContent) {
                 activeContent.classList.add('active');
             }
             
-            // Ocultar input si no es chat
             if (inputBoxEl) {
                 inputBoxEl.style.display = feature === 'chat' ? 'flex' : 'none';
             }
             
-            // Actualizar displays si es necesario
             if (feature === 'history') updateHistoryDisplay();
             if (feature === 'stats') updateStatsDisplay();
             
-            // Cerrar menú
             if (menuIcon && menuNav) {
                 menuIcon.classList.remove('active');
                 menuNav.classList.remove('open');
