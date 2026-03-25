@@ -7,7 +7,7 @@ app.use(cors());
 app.use(express.json());
 
 // 🔑 PON AQUÍ TU API KEY DE GEMINI
-const GEMINI_API_KEY = "TU_API_KEY_AQUI";
+const GEMINI_API_KEY = "AIzaSyDOeMUQpzYAwDzGaeRMK5i-edM8opRvcrY";
 
 // Ruta para extraer producto y precio
 app.post("/extract", async (req, res) => {
