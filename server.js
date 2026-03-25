@@ -1,144 +1,604 @@
-import express from "express";
-import fetch from "node-fetch";
-import cors from "cors";
+/**
+ * GastoZero v5 - Con fallback local y mejor detección de errores
+ */
 
-const app = express();
-app.use(cors());
-app.use(express.json());
+let state = {
+    step: 'START',
+    itemName: '',
+    itemPrice: 0,
+    needOrWant: '',
+    user: null,
+    isTyping: false
+};
 
-// 🔑 PON AQUÍ TU API KEY DE GEMINI
-const GEMINI_API_KEY = "TU_API_KEY_AQUI";
+// Datos de usuarios (localStorage)
+let usersData = {};
 
-// Ruta para extraer producto y precio
-app.post("/extract", async (req, res) => {
-    let { text } = req.body;
+function loadUsers() {
+    const saved = localStorage.getItem('gastozero_users');
+    if (saved) {
+        usersData = JSON.parse(saved);
+    }
+}
+
+function saveUsers() {
+    localStorage.setItem('gastozero_users', JSON.stringify(usersData));
+}
+
+function getUserData(username) {
+    if (!usersData[username]) {
+        usersData[username] = {
+            savedTotal: 0,
+            streak: 0,
+            lastDate: null,
+            avoidedCount: 0,
+            tipsCount: 0,
+            history: []
+        };
+        saveUsers();
+    }
+    return usersData[username];
+}
+
+function updateUserData(username, data) {
+    usersData[username] = { ...usersData[username], ...data };
+    saveUsers();
+}
+
+// Elementos DOM
+const chat = document.getElementById("chat-container");
+const inputBox = document.getElementById("input-box");
+const userInput = document.getElementById("user-input");
+const sendBtn = document.getElementById("send-btn");
+const appDiv = document.getElementById("app");
+const loginOverlay = document.getElementById("login-overlay");
+
+// =========================
+// 🌌 ESTRELLAS
+// =========================
+function createStars() {
+    const container = document.getElementById("stars-layer");
+    if (!container) return;
+    container.innerHTML = '';
     
-    console.log("📝 Texto recibido:", text);
+    const starCount = 150;
+    for (let i = 0; i < starCount; i++) {
+        const star = document.createElement("div");
+        star.className = "star-particle";
+        const size = Math.random() * 2 + 1;
+        star.style.width = size + "px";
+        star.style.height = size + "px";
+        star.style.top = Math.random() * 100 + "%";
+        star.style.left = Math.random() * 100 + "%";
+        star.style.opacity = Math.random() * 0.5 + 0.2;
+        star.style.animationDelay = Math.random() * 8 + "s";
+        star.style.animationDuration = (Math.random() * 6 + 5) + "s";
+        container.appendChild(star);
+    }
+    
+    const brightCount = 40;
+    for (let i = 0; i < brightCount; i++) {
+        const star = document.createElement("div");
+        star.className = "star-bright";
+        const size = Math.random() * 3 + 2;
+        star.style.width = size + "px";
+        star.style.height = size + "px";
+        star.style.top = Math.random() * 100 + "%";
+        star.style.left = Math.random() * 100 + "%";
+        star.style.animationDelay = Math.random() * 3 + "s";
+        star.style.animationDuration = (Math.random() * 2 + 2) + "s";
+        container.appendChild(star);
+    }
+}
 
+function createShootingStar() {
+    const container = document.getElementById("stars-layer");
+    if (!container) return;
+    const star = document.createElement("div");
+    star.className = "shooting-star";
+    star.style.left = Math.random() * window.innerWidth + "px";
+    star.style.top = Math.random() * (window.innerHeight / 2) + "px";
+    container.appendChild(star);
+    setTimeout(() => star.remove(), 2000);
+}
+
+function initStars() {
+    createStars();
+    setInterval(() => {
+        if (Math.random() < 0.25) createShootingStar();
+    }, 12000);
+}
+initStars();
+
+// =========================
+// 🔧 UTILIDADES
+// =========================
+function scrollToBottom() {
+    if (chat) {
+        chat.scrollTop = chat.scrollHeight;
+    }
+}
+
+function setInputEnabled(enabled) {
+    state.isTyping = !enabled;
+    if (enabled) {
+        inputBox.classList.remove("disabled");
+        userInput.disabled = false;
+        sendBtn.disabled = false;
+        userInput.focus();
+    } else {
+        inputBox.classList.add("disabled");
+        userInput.disabled = true;
+        sendBtn.disabled = true;
+    }
+}
+
+function updateFloatingCounter() {
+    if (!state.user) return;
+    const userData = getUserData(state.user);
+    const counterEl = document.getElementById('counter-value');
+    if (counterEl) counterEl.innerHTML = `${userData.savedTotal}€`;
+}
+
+function updateStatsDisplay() {
+    if (!state.user) return;
+    const userData = getUserData(state.user);
+    const savedEl = document.getElementById('stat-saved');
+    const streakEl = document.getElementById('stat-streak');
+    const avoidedEl = document.getElementById('stat-avoided');
+    const tipsEl = document.getElementById('stat-tips');
+    
+    if (savedEl) savedEl.innerHTML = `${userData.savedTotal}€`;
+    if (streakEl) streakEl.innerHTML = `${userData.streak} días`;
+    if (avoidedEl) avoidedEl.innerHTML = userData.avoidedCount;
+    if (tipsEl) tipsEl.innerHTML = userData.tipsCount;
+    
+    updateFloatingCounter();
+}
+
+function updateHistoryDisplay() {
+    if (!state.user) return;
+    const userData = getUserData(state.user);
+    const historyDiv = document.getElementById('history-list');
+    if (!historyDiv) return;
+    
+    if (userData.history.length === 0) {
+        historyDiv.innerHTML = '<p style="text-align:center; opacity:0.7;">✨ Aún no hay decisiones. ¡Analiza tu primer gasto!</p>';
+        return;
+    }
+    
+    historyDiv.innerHTML = userData.history.slice(0, 15).map(item => `
+        <div class="history-item">
+            <span class="item-name">${item.item}</span>
+            <span class="item-price">${item.price}€</span>
+            <span class="item-decision ${item.decision === 'evitado' ? 'avoided' : 'bought'}">${item.decision === 'evitado' ? '✅ Evitado' : '🛒 Comprado'}</span>
+            <span class="item-date">${item.date}</span>
+        </div>
+    `).join('');
+}
+
+function addToHistory(item, price, decision) {
+    if (!state.user) return;
+    const userData = getUserData(state.user);
+    userData.history.unshift({
+        item,
+        price,
+        decision,
+        date: new Date().toLocaleDateString()
+    });
+    if (userData.history.length > 30) userData.history.pop();
+    updateUserData(state.user, { history: userData.history });
+    updateHistoryDisplay();
+}
+
+function updateStreak() {
+    if (!state.user) return;
+    const userData = getUserData(state.user);
+    const today = new Date().toDateString();
+    if (userData.lastDate !== today) {
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        if (userData.lastDate === yesterday.toDateString()) {
+            userData.streak++;
+        } else {
+            userData.streak = 1;
+        }
+        userData.lastDate = today;
+        updateUserData(state.user, { streak: userData.streak, lastDate: today });
+        updateStatsDisplay();
+    }
+}
+
+// =========================
+// 💬 MENSAJES
+// =========================
+async function aiSpeak(messages) {
+    for (let msg of messages) {
+        if (!msg) continue;
+        const div = document.createElement("div");
+        div.className = "message";
+        chat.appendChild(div);
+        for (let c of msg) {
+            div.innerHTML += c;
+            scrollToBottom();
+            await new Promise(r => setTimeout(r, 20));
+        }
+        await new Promise(r => setTimeout(r, 300));
+    }
+}
+
+// =========================
+// 🤖 LLAMADA AL BACKEND CON FALLBACK LOCAL
+// =========================
+const BACKEND_URL = "https://hourcode.onrender.com";
+
+// Lista de productos comunes en español
+const productosComunes = [
+    "coche", "carro", "auto", "vehículo",
+    "ordenador", "portátil", "pc", "computadora",
+    "cascos", "auriculares", "audífonos",
+    "móvil", "teléfono", "iphone", "android",
+    "silla", "mesa", "escritorio",
+    "teclado", "ratón", "monitor",
+    "consola", "ps5", "xbox", "nintendo",
+    "zapatos", "zapatillas", "ropa",
+    "libro", "curso", "clase"
+];
+
+function extractLocalProduct(text) {
+    const lowerText = text.toLowerCase();
+    for (let producto of productosComunes) {
+        if (lowerText.includes(producto)) {
+            return producto;
+        }
+    }
+    return "producto";
+}
+
+function extractLocalPrice(text) {
+    // Buscar números con € o euros
+    let match = text.match(/(\d+)\s*(€|euros?|eur)/i);
+    if (match) return parseFloat(match[1]);
+    
+    // Buscar números sueltos
+    match = text.match(/(\d+)/);
+    if (match) return parseFloat(match[1]);
+    
+    return 0;
+}
+
+async function extractFromText(text) {
+    // FALLBACK LOCAL: extraer precio manualmente
+    const localPrice = extractLocalPrice(text);
+    const localProduct = extractLocalProduct(text);
+    
+    console.log("🔍 Fallback local - Producto:", localProduct, "Precio:", localPrice);
+    
     try {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
+        const res = await fetch(`${BACKEND_URL}/extract`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                contents: [{
-                    parts: [{
-                        text: `Eres un extractor de productos en ESPAÑOL. Analiza este texto y responde SOLO con el producto y el precio en este formato exacto:
-
-PRODUCTO: [nombre del producto]
-PRECIO: [número]
-
-REGLAS IMPORTANTES:
-- Perdona TODAS las faltas de ortografía (ej: "cuestas" = cuesta, "carrro" = carro, "coche" = coche)
-- El producto puede ser de 1 a 3 palabras
-- Reconoce sinónimos comunes en España:
-  * "carro" = coche
-  * "ordenata" = ordenador
-  * "móvi" = móvil
-  * "cascos" = auriculares
-- Si el precio está en palabras (ej: "ochenta euros"), conviértelo a número
-- Si no ves un precio claro, pon PRECIO: 0
-- Ignora nombres, edades, ciudades y conversación previa
-
-Texto: "${text}"`
-                    }]
-                }],
-                generationConfig: {
-                    temperature: 0,
-                    maxOutputTokens: 80
-                }
-            })
+            body: JSON.stringify({ text })
         });
-
-        const data = await response.json();
         
-        if (!data.candidates || !data.candidates[0]) {
-            console.error("Error respuesta Gemini:", data);
-            return res.json({ object: "algo", price: 0 });
+        if (!res.ok) {
+            console.log("⚠️ Backend no responde, usando fallback local");
+            if (localPrice > 0) {
+                return { product: localProduct, price: localPrice };
+            }
+            return { product: "algo", price: 0 };
         }
         
-        const respuesta = data.candidates[0].content.parts[0].text;
-        console.log("📦 Respuesta Gemini:", respuesta);
+        const data = await res.json();
+        console.log("🤖 IA devolvió:", data);
         
-        // Extraer producto y precio
-        const productMatch = respuesta.match(/PRODUCTO:\s*(.+)/i);
-        const priceMatch = respuesta.match(/PRECIO:\s*(\d+)/i);
+        // Si la IA devuelve algo válido, usarlo
+        if (data.price > 0 && data.object !== "algo" && data.object !== "producto") {
+            return { product: data.object, price: data.price };
+        }
         
-        let producto = productMatch ? productMatch[1].trim().toLowerCase() : "algo";
-        const precio = priceMatch ? parseFloat(priceMatch[1]) : 0;
+        // Si no, usar el fallback local
+        if (localPrice > 0) {
+            console.log("🔄 Usando fallback local porque IA no detectó bien");
+            return { product: localProduct, price: localPrice };
+        }
         
-        // Limpiar producto (quitar palabras raras)
-        producto = producto.replace(/[^\w\sáéíóúñ]/g, "").trim();
+        return { product: "algo", price: 0 };
         
-        console.log("🧠 Extraído:", { producto, precio });
-        res.json({ object: producto, price: precio });
-
-    } catch (err) {
-        console.error("Error Gemini:", err);
-        res.json({ object: "algo", price: 0 });
+    } catch (e) {
+        console.error("❌ Error backend, usando fallback local:", e);
+        if (localPrice > 0) {
+            return { product: localProduct, price: localPrice };
+        }
+        return { product: "algo", price: 0 };
     }
-});
+}
 
-// Ruta para el consejo amigable
-app.post("/advice", async (req, res) => {
-    const { product, price, needOrWant, saved } = req.body;
-    
-    const prompt = `
-Eres "GastoZero", un asistente amigable que ayuda a evitar gastos innecesarios. Hablas español de España.
-
-Contexto:
-- Producto: ${product} (${price}€)
-- El usuario dice que es: ${needOrWant || "no especificado"}
-- Dinero ahorrado hasta ahora: ${saved || 0}€
-
-Reglas:
-- Responde en español natural y cercano
-- Sé empático, no sermonees
-- Usa emojis con moderación
-- Da un consejo útil y breve (máximo 3 líneas)
-- Si es un capricho, sugiere esperar 24 horas
-- Si es una necesidad, da consejos para comprar inteligente
-- Termina con una pregunta que invite a reflexionar
-
-Responde:`;
-
+async function getAdvice(product, price, needOrWant) {
     try {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
+        const userData = getUserData(state.user);
+        const res = await fetch(`${BACKEND_URL}/advice`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                contents: [{
-                    parts: [{ text: prompt }]
-                }],
-                generationConfig: {
-                    temperature: 0.8,
-                    maxOutputTokens: 150
-                }
+            body: JSON.stringify({ 
+                product, 
+                price, 
+                needOrWant, 
+                saved: userData.savedTotal 
             })
         });
-
-        const data = await response.json();
         
-        if (!data.candidates || !data.candidates[0]) {
-            console.error("Error consejo Gemini:", data);
-            return res.json({ advice: "¿Realmente necesitas esto? Espera 24 horas antes de decidir. 💭" });
+        if (!res.ok) {
+            throw new Error("Backend error");
         }
         
-        const advice = data.candidates[0].content.parts[0].text;
+        const data = await res.json();
         
-        console.log("💡 Consejo:", advice);
-        res.json({ advice });
-
-    } catch (err) {
-        console.error("Error consejo:", err);
-        res.json({ advice: "¿Realmente necesitas esto? Espera 24 horas antes de decidir. 💭" });
+        userData.tipsCount++;
+        updateUserData(state.user, { tipsCount: userData.tipsCount });
+        updateStatsDisplay();
+        
+        return data.advice;
+    } catch (e) {
+        console.error("Error consejo, usando fallback:", e);
+        // Consejos de fallback
+        const consejos = [
+            `💭 Piensa bien si realmente necesitas ${product}. Espera 24 horas y decide.`,
+            `💰 Gastar ${price}€ en ${product} significa ${Math.floor(price / 10)} horas de trabajo. ¿Vale la pena?`,
+            `🎯 Si no compras ${product}, podrías ahorrar ${price}€ para tu próxima meta.`,
+            `🤔 ¿Es ${product} una necesidad real o un capricho momentáneo?`
+        ];
+        return consejos[Math.floor(Math.random() * consejos.length)];
     }
-});
+}
 
-// Ruta de prueba para ver si el servidor está vivo
-app.get("/", (req, res) => {
-    res.json({ status: "ok", message: "GastoZero API funcionando" });
-});
+// =========================
+// 🔄 FLUJO PRINCIPAL
+// =========================
+async function handleFlow(input) {
+    
+    if (state.step === 'START') {
+        const { product, price } = await extractFromText(input);
+        
+        console.log("📦 Resultado final:", { product, price });
+        
+        if (price === 0) {
+            await aiSpeak([
+                "No veo un precio claro. Ejemplo: 'unos cascos que cuestan 50€'",
+                "¿Puedes decirme cuánto cuesta y qué es?"
+            ]);
+            return;
+        }
+        
+        state.itemName = product;
+        state.itemPrice = price;
+        state.step = 'ASK_NEED';
+        
+        await aiSpeak([
+            `✅ Entendido: ${product} por ${price}€.`,
+            `Antes de decidir, dime una cosa...`,
+            `¿Es algo que necesitas sí o sí (ej: se te rompió) o es más un capricho que te apetece?`
+        ]);
+    }
+    
+    else if (state.step === 'ASK_NEED') {
+        const lower = input.toLowerCase();
+        if (lower.includes("necesito") || lower.includes("necesidad") || lower.includes("se me rompió") || lower.includes("sí o sí") || lower.includes("si o si") || lower.includes("obligatorio") || lower.includes("imprescindible")) {
+            state.needOrWant = "necesidad";
+        } else {
+            state.needOrWant = "capricho";
+        }
+        state.step = 'ADVICE';
+        
+        await aiSpeak(["🤔 Déjame pensar un momento..."]);
+        const advice = await getAdvice(state.itemName, state.itemPrice, state.needOrWant);
+        
+        await aiSpeak([advice]);
+        
+        await aiSpeak([
+            `Si decides NO comprarlo, sumarás ${state.itemPrice}€ a tu ahorro total.`,
+            `¿Qué decides? (responde "comprar" o "no comprar")`
+        ]);
+        
+        state.step = 'DECISION';
+    }
+    
+    else if (state.step === 'DECISION') {
+        const lower = input.toLowerCase();
+        const userData = getUserData(state.user);
+        
+        if (lower.includes("no comprar") || lower.includes("no lo compro") || lower.includes("evitar") || lower.includes("no compro") || lower.includes("no lo voy a comprar")) {
+            userData.savedTotal += state.itemPrice;
+            userData.avoidedCount++;
+            updateUserData(state.user, { 
+                savedTotal: userData.savedTotal, 
+                avoidedCount: userData.avoidedCount 
+            });
+            updateStatsDisplay();
+            addToHistory(state.itemName, state.itemPrice, "evitado");
+            updateStreak();
+            
+            await aiSpeak([
+                `🎉 ¡Bien hecho! Has evitado gastar ${state.itemPrice}€.`,
+                `💰 Total ahorrado: ${userData.savedTotal}€`,
+                `🔥 Racha: ${userData.streak} días seguidos`,
+                `¿Quieres analizar otro gasto? Escríbeme lo que estás pensando comprar.`
+            ]);
+        } else if (lower.includes("comprar") || lower.includes("lo compro") || lower.includes("si") || lower.includes("compro") || lower.includes("lo voy a comprar")) {
+            addToHistory(state.itemName, state.itemPrice, "comprado");
+            
+            await aiSpeak([
+                `👍 Está bien. Es tu decisión.`,
+                `💡 Consejo: Antes de comprar, espera 24 horas. Si sigues queriéndolo, adelante.`,
+                `¿Quieres analizar otro gasto? Escríbeme lo que estás pensando comprar.`
+            ]);
+        } else {
+            await aiSpeak(["No te he entendido. ¿Comprar o no comprar? Responde 'comprar' o 'no comprar'"]);
+            return;
+        }
+        
+        state.step = 'START';
+    }
+}
 
-app.listen(3000, () => {
-    console.log("🚀 Servidor con Gemini corriendo en http://localhost:3000");
+// =========================
+// 🎯 ENVIAR MENSAJE
+// =========================
+async function sendMessage() {
+    if (state.isTyping) return;
+    if (!userInput.value.trim()) return;
+
+    const message = userInput.value.trim();
+    chat.style.display = "flex";
+    const userMsg = document.createElement("div");
+    userMsg.className = "message user";
+    userMsg.innerText = message;
+    chat.appendChild(userMsg);
+    scrollToBottom();
+    userInput.value = "";
+    setInputEnabled(false);
+    
+    try {
+        await handleFlow(message);
+    } catch (error) {
+        console.error(error);
+        await aiSpeak(["Ha ocurrido un error. Inténtalo de nuevo."]);
+    }
+    setInputEnabled(true);
+}
+
+// =========================
+// 🍔 MENÚ
+// =========================
+function initMenu() {
+    const menuIcon = document.getElementById('menu-icon');
+    const menuNav = document.getElementById('menu-nav');
+    const menuItems = document.querySelectorAll('.menu-list li');
+    const featureContents = document.querySelectorAll('.feature-content');
+    const inputBoxEl = document.getElementById('input-box');
+    
+    if (menuIcon && menuNav) {
+        menuIcon.addEventListener('click', () => {
+            menuIcon.classList.toggle('active');
+            menuNav.classList.toggle('open');
+        });
+        document.addEventListener('click', (e) => {
+            if (!menuIcon.contains(e.target) && !menuNav.contains(e.target) && menuNav.classList.contains('open')) {
+                menuIcon.classList.remove('active');
+                menuNav.classList.remove('open');
+            }
+        });
+    }
+    
+    menuItems.forEach(item => {
+        item.addEventListener('click', () => {
+            const feature = item.dataset.feature;
+            menuItems.forEach(i => i.classList.remove('active'));
+            item.classList.add('active');
+            featureContents.forEach(content => content.classList.remove('active'));
+            const activeContent = document.getElementById(`${feature}-container`);
+            if (activeContent) activeContent.classList.add('active');
+            if (inputBoxEl) inputBoxEl.style.display = feature === 'chat' ? 'flex' : 'none';
+            if (menuIcon && menuNav) {
+                menuIcon.classList.remove('active');
+                menuNav.classList.remove('open');
+            }
+            
+            if (feature === 'history') updateHistoryDisplay();
+            if (feature === 'stats') updateStatsDisplay();
+        });
+    });
+}
+
+// =========================
+// 👤 LOGIN FUNCIONAL
+// =========================
+function initLogin() {
+    loadUsers();
+    
+    const loginBtn = document.getElementById('login-btn');
+    const usernameInput = document.getElementById('login-username');
+    
+    if (!loginBtn) {
+        console.error("❌ Botón login no encontrado");
+        return;
+    }
+    
+    if (!usernameInput) {
+        console.error("❌ Input username no encontrado");
+        return;
+    }
+    
+    function doLogin() {
+        const username = usernameInput.value.trim();
+        
+        if (!username) {
+            alert("✨ Por favor, escribe un nombre para comenzar");
+            usernameInput.focus();
+            return;
+        }
+        
+        state.user = username;
+        const userData = getUserData(username);
+        
+        loginOverlay.style.animation = 'fadeOutScale 0.3s ease forwards';
+        
+        setTimeout(() => {
+            loginOverlay.style.display = 'none';
+            appDiv.style.display = 'flex';
+            
+            updateStatsDisplay();
+            updateHistoryDisplay();
+            updateFloatingCounter();
+            
+            setTimeout(() => {
+                aiSpeak([
+                    `👋 ¡Hola ${username}! Soy GastoZero.`,
+                    `Te ayudo a pensar antes de comprar.`,
+                    `Hasta ahora has ahorrado ${userData.savedTotal}€. ¡Sigue así!`,
+                    `Cuéntame, ¿qué estás pensando comprar y cuánto cuesta?`
+                ]);
+            }, 500);
+        }, 300);
+    }
+    
+    loginBtn.addEventListener('click', doLogin);
+    usernameInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            doLogin();
+        }
+    });
+    
+    console.log("✅ Login inicializado correctamente");
+}
+
+// Añadir animación
+const styleSheet = document.createElement('style');
+styleSheet.textContent = `
+    @keyframes fadeOutScale {
+        from { opacity: 1; transform: scale(1); }
+        to { opacity: 0; transform: scale(0.95); visibility: hidden; }
+    }
+`;
+document.head.appendChild(styleSheet);
+
+// =========================
+// 🎯 INICIALIZAR
+// =========================
+document.addEventListener('DOMContentLoaded', () => {
+    initMenu();
+    initLogin();
+    
+    sendBtn.onclick = sendMessage;
+    userInput.addEventListener("keypress", (e) => { 
+        if (e.key === "Enter" && !state.isTyping) {
+            e.preventDefault();
+            sendMessage();
+        }
+    });
+    
+    window.addEventListener('resize', () => {
+        setTimeout(scrollToBottom, 100);
+    });
 });
