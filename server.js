@@ -7,7 +7,7 @@ app.use(cors());
 app.use(express.json());
 
 // 🔑 PON AQUÍ TU API KEY DE GEMINI
-const GEMINI_API_KEY = "TU_API_KEY_AQUI";
+const GEMINI_API_KEY = "AIzaSyDOeMUQpzYAwDzGaeRMK5i-edM8opRvcrY";
 
 // Ruta para extraer producto y precio
 app.post("/extract", async (req, res) => {
@@ -22,32 +22,79 @@ app.post("/extract", async (req, res) => {
             body: JSON.stringify({
                 contents: [{
                     parts: [{
-                        text: `Eres un EXTRACTOR DE PRODUCTOS Y PRECIOS en español. Tu ÚNICA función es analizar el texto y devolver EXCLUSIVAMENTE el producto y el precio en el formato exacto que se te indica.
+                        text: `Eres un EXTRACTOR DE PRODUCTOS Y PRECIOS en español. Tu ÚNICA función es analizar el texto y devolver EXCLUSIVAMENTE el producto y el precio.
 
-FORMATO DE RESPUESTA OBLIGATORIO:
-PRODUCTO: [nombre del producto en español, entre 1 y 4 palabras]
-PRECIO: [número entero o decimal]
+FORMATO DE RESPUESTA OBLIGATORIO (exactamente así):
+PRODUCTO: [nombre del producto en español]
+PRECIO: [número]
 
 REGLAS ABSOLUTAS:
-1. Perdona TODAS las faltas de ortografía (cuestas = cuesta, carro = coche, ordenata = ordenador)
-2. Reconoce sinónimos comunes en España:
-   - "carro", "auto" = coche
-   - "móvi", "celular" = móvil
-   - "cascos" = auriculares
-   - "portátil", "laptop" = ordenador portátil
-   - "pantalla" = monitor
-3. Si el precio está en palabras (ochenta, ciento veinte), conviértelo a número
-4. Si hay múltiples números, elige el que parece ser el precio del producto principal
-5. Si NO hay un precio claro, responde PRECIO: 0
-6. Si NO hay un producto claro, responde PRODUCTO: desconocido
-7. IGNORA completamente: nombres propios, edades, ciudades, emociones, historias personales
 
-Texto a analizar: "${text}"`
+1. CORRECCIÓN DE ORTOGRAFÍA Y SINÓNIMOS:
+   - Perdona TODAS las faltas de ortografía ("cuestas" = cuesta, "carrro" = carro, "móvi" = móvil)
+   - Reconoce sinónimos comunes en España:
+     * "carro", "auto", "coche" = coche
+     * "ordenata", "pc", "computadora" = ordenador
+     * "móvi", "celu", "telefono" = móvil
+     * "cascos" = auriculares
+     * "portátil", "laptop" = ordenador portátil
+     * "pantalla" = monitor
+     * "zapatillas" = zapatillas deportivas
+     * "lambo" = Lamborghini
+     * "ferrari" = Ferrari
+     * "porsche" = Porsche
+     * "bugatti" = Bugatti
+
+2. DETECCIÓN DE PRECIO:
+   - Busca números seguidos de "€", "euros", "eur"
+   - Si el precio está en palabras ("ochenta", "ciento veinte"), conviértelo a número
+   - Si hay varios números, elige el que parece ser el precio principal (normalmente el más grande o el que está cerca del producto)
+   - Si no hay precio, responde PRECIO: 0
+
+3. DETECCIÓN DE PRODUCTO:
+   - Identifica el objeto principal que se quiere comprar
+   - Puede ser de 1 a 5 palabras (ej: "Lamborghini M1", "cascos gaming", "silla ergonómica")
+   - Si hay varios objetos, elige el principal
+   - Ignora verbos como "comprar", "quiero", "necesito"
+   - Ignora nombres propios de personas, edades, ciudades, emociones
+
+4. EJEMPLOS DE RESPUESTA CORRECTA:
+
+Texto: "quiero comprar un lambo M1 que esta tope de guapo chaval que cuesta 8000 euros"
+Respuesta:
+PRODUCTO: Lamborghini M1
+PRECIO: 8000
+
+Texto: "unos cascos que cuestan 50 pavos"
+Respuesta:
+PRODUCTO: cascos
+PRECIO: 50
+
+Texto: "me quiero comprar una silla gaming por 150 euros"
+Respuesta:
+PRODUCTO: silla gaming
+PRECIO: 150
+
+Texto: "necesito un ordenata que cuesta 800"
+Respuesta:
+PRODUCTO: ordenador
+PRECIO: 800
+
+Texto: "hola me llamo Fer, quiero un Ferrari que cuesta 300 mil euros"
+Respuesta:
+PRODUCTO: Ferrari
+PRECIO: 300000
+
+5. SI NO HAY INFORMACIÓN SUFICIENTE:
+   - Si no hay precio: PRECIO: 0
+   - Si no hay producto claro: PRODUCTO: desconocido
+
+TEXTO A ANALIZAR: "${text}"`
                     }]
                 }],
                 generationConfig: {
                     temperature: 0,
-                    maxOutputTokens: 80
+                    maxOutputTokens: 100
                 }
             })
         });
@@ -62,15 +109,17 @@ Texto a analizar: "${text}"`
         const respuesta = data.candidates[0].content.parts[0].text;
         console.log("📦 Respuesta Gemini:", respuesta);
         
+        // Extraer producto y precio
         const productMatch = respuesta.match(/PRODUCTO:\s*(.+)/i);
         const priceMatch = respuesta.match(/PRECIO:\s*(\d+)/i);
         
         let producto = productMatch ? productMatch[1].trim().toLowerCase() : "desconocido";
         const precio = priceMatch ? parseFloat(priceMatch[1]) : 0;
         
+        // Limpiar producto
         producto = producto.replace(/[^\w\sáéíóúñ]/g, "").trim();
         
-        console.log("🧠 Extraído:", { producto, precio });
+        console.log("🧠 Extraído final:", { producto, precio });
         res.json({ object: producto, price: precio });
 
     } catch (err) {
@@ -79,43 +128,54 @@ Texto a analizar: "${text}"`
     }
 });
 
-// Ruta para el consejo - PROMPT DE TESIS DOCTORAL
+// Ruta para el consejo - PROMPT DE TESIS DOCTORAL MEJORADO
 app.post("/advice", async (req, res) => {
     const { product, price, needOrWant, saved, username, streak } = req.body;
     
-    const prompt = `Eres "GastoZero", un asesor financiero personal con un enfoque humanista y psicológico. Tu misión es ayudar a las personas a tomar decisiones de compra más conscientes, basadas en el valor real del dinero y el tiempo.
+    const prompt = `Eres "GastoZero", un asesor financiero personal con un enfoque humanista y psicológico. Tu misión es ayudar a las personas a tomar decisiones de compra más conscientes.
 
-CONTEXTO DEL USUARIO:
+DATOS DEL USUARIO:
 - Nombre: ${username || "usuario"}
-- Producto que quiere comprar: ${product}
+- Producto: ${product}
 - Precio: ${price}€
-- Naturaleza del gasto: ${needOrWant === "necesidad" ? "NECESIDAD REAL (algo que se rompió o es imprescindible)" : "CAPRICHO/DESEO (algo que le apetece pero no necesita)"}
+- Tipo de gasto: ${needOrWant === "necesidad" ? "NECESIDAD REAL" : "CAPRICHO/DESEO"}
 - Dinero ahorrado hasta ahora: ${saved || 0}€
-- Racha de reflexión: ${streak || 0} días consecutivos
+- Racha de reflexión: ${streak || 0} días
 
-INSTRUCCIONES PARA TU RESPUESTA:
-1. Actúa como un amigo sabio, no como un juez. Sé empático pero firme.
-2. Usa el nombre del usuario para personalizar.
-3. Si es un capricho:
-   - Calcula cuántas horas de trabajo representa el gasto (basado en un salario medio de 12-15€/h)
-   - Pregunta si realmente vale la pena trabajar tantas horas por ese producto
-   - Ofrece la regla de las 48 horas: si después de 2 días sigue queriéndolo, que lo piense
-   - Menciona el "costo de oportunidad": qué otra cosa podría hacer con ese dinero
-4. Si es una necesidad:
+INSTRUCCIONES PARA TU RESPUESTA (SIGUE ESTAS REGLAS AL PIE DE LA LETRA):
+
+1. TONO Y ESTILO:
+   - Sé cálido, cercano y empático. Usa el nombre del usuario.
+   - Habla como un amigo sabio, no como un juez.
+   - Usa emojis con moderación (máximo 1 o 2 por mensaje).
+
+2. SI ES UN CAPRICHO:
+   - Calcula: ${price}€ son aproximadamente ${Math.floor(price / 12)} horas de trabajo (basado en salario medio de 12€/h)
+   - Pregunta si realmente vale la pena trabajar tantas horas por esto
+   - Menciona la regla de las 48 horas: esperar 2 días antes de comprar
+   - Habla del "costo de oportunidad": qué otra cosa podría hacer con ese dinero (un viaje, un curso, invertir)
+
+3. SI ES UNA NECESIDAD:
    - Felicítale por ser responsable
-   - Sugiere comparar precios en 3 sitios diferentes antes de comprar
+   - Sugiere comparar precios en 2-3 sitios diferentes
    - Pregunta si ha considerado segunda mano o alternativas más económicas
-5. VARIEDAD OBLIGATORIA: NO USES LAS MISMAS FRASES. Cada consejo debe ser ÚNICO.
-6. LONGITUD: Entre 2 y 4 líneas, conciso pero profundo.
-7. TONO: Cálido, cercano, con pequeñas dosis de humor si es apropiado.
-8. TERMINA SIEMPRE con una pregunta que invite a la reflexión personal.
+   - Recomienda buscar opiniones antes de comprar
 
-EJEMPLOS DE CONSEJOS QUE PUEDES ADAPTAR (NO COPIAR LITERALMENTE):
-- "Juan, gastar 800€ en un móvil nuevo son 80 horas de trabajo. ¿Realmente necesitas el último modelo o uno más sencillo te sirve igual?"
-- "Ana, un capricho de 50€ está bien si lo has planeado. La clave no es privarte, sino elegir conscientemente."
-- "Carlos, antes de comprar ese producto necesario, ¿has mirado en Wallapop o Vinted? A veces hay oportunidades increíbles."
-- "Lucía, con 1200€ podrías hacer un curso que duplique tu sueldo. ¿Prefieres eso o el objeto?"
-- "Diego, la regla de las 48 horas: espera 2 días. Si sigues queriéndolo, cómpralo sin culpa. Si se te pasa, te has ahorrado un disgusto."
+4. VARIEDAD OBLIGATORIA:
+   - NO USES LAS MISMAS FRASES SIEMPRE
+   - Cada consejo debe ser ÚNICO y adaptado al contexto
+   - Si ya ha ahorrado dinero, menciónalo como motivación
+
+5. ESTRUCTURA DE LA RESPUESTA:
+   - Empieza con el nombre del usuario
+   - Da el consejo principal (2-3 líneas)
+   - Termina con una pregunta que invite a reflexionar
+
+EJEMPLOS DE BUENAS RESPUESTAS (NO COPIAR LITERALMENTE, INSPIRARTE):
+- "Fer, gastar 8000€ en un Lamborghini son más de 600 horas de trabajo. ¿Vale la pena trabajar tantas horas por un coche que apenas usarás? Piensa en lo que podrías hacer con ese dinero: un viaje increíble, invertir en tu futuro... ¿qué prefieres?"
+- "Ana, 150€ en unas zapatillas que necesitas está bien. Pero antes de comprar, ¿has mirado en tiendas de segunda mano? A veces encuentras joyas casi nuevas por la mitad."
+- "Carlos, veo que ya has ahorrado 500€. ¡Qué bien! Para ese capricho de 200€ que te apetece, la regla de las 48 horas funciona: espera 2 días y si aún lo quieres, cómpralo sin culpa. ¿Crees que después de 2 días seguirás queriéndolo igual?"
+- "Lucía, un ordenador de 800€ es una inversión si lo necesitas para trabajar. Solo asegúrate de comparar precios en 3 sitios diferentes. ¿Has mirado ofertas o reacondicionados?"
 
 RESPONDE AHORA CON UN CONSEJO PERSONALIZADO PARA ${username?.toUpperCase() || "EL USUARIO"}:`;
 
@@ -128,7 +188,7 @@ RESPONDE AHORA CON UN CONSEJO PERSONALIZADO PARA ${username?.toUpperCase() || "E
                     parts: [{ text: prompt }]
                 }],
                 generationConfig: {
-                    temperature: 0.9,
+                    temperature: 0.85,
                     maxOutputTokens: 200
                 }
             })
@@ -143,7 +203,12 @@ RESPONDE AHORA CON UN CONSEJO PERSONALIZADO PARA ${username?.toUpperCase() || "E
         
         const advice = data.candidates[0].content.parts[0].text;
         
-        console.log("💡 Consejo:", advice);
+        // Verificar que el consejo no sea undefined o vacío
+        if (!advice || advice.includes("undefined")) {
+            throw new Error("Consejo inválido");
+        }
+        
+        console.log("💡 Consejo generado:", advice);
         res.json({ advice });
 
     } catch (err) {
@@ -154,9 +219,10 @@ RESPONDE AHORA CON UN CONSEJO PERSONALIZADO PARA ${username?.toUpperCase() || "E
 
 // Ruta de prueba
 app.get("/", (req, res) => {
-    res.json({ status: "ok", message: "GastoZero API funcionando con Gemini" });
+    res.json({ status: "ok", message: "GastoZero API funcionando con Gemini v2" });
 });
 
 app.listen(3000, () => {
     console.log("🚀 Servidor con Gemini corriendo en http://localhost:3000");
+    console.log("📡 Endpoints: /extract, /advice");
 });
