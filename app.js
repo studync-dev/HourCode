@@ -1,5 +1,5 @@
 /**
- * GastoZero - Asistente anti-gastos innecesarios
+ * GastoZero v2 - Con login y estadísticas
  */
 
 let state = {
@@ -7,17 +7,54 @@ let state = {
     itemName: '',
     itemPrice: 0,
     needOrWant: '',
-    savedTotal: parseInt(localStorage.getItem('savedMoney')) || 0,
-    lastDecisions: JSON.parse(localStorage.getItem('lastDecisions')) || []
+    user: null,
+    isTyping: false
 };
 
+// Datos de usuarios (localStorage)
+let usersData = {};
+
+function loadUsers() {
+    const saved = localStorage.getItem('gastozero_users');
+    if (saved) {
+        usersData = JSON.parse(saved);
+    }
+}
+
+function saveUsers() {
+    localStorage.setItem('gastozero_users', JSON.stringify(usersData));
+}
+
+function getUserData(username) {
+    if (!usersData[username]) {
+        usersData[username] = {
+            savedTotal: 0,
+            streak: 0,
+            lastDate: null,
+            avoidedCount: 0,
+            tipsCount: 0,
+            history: []
+        };
+        saveUsers();
+    }
+    return usersData[username];
+}
+
+function updateUserData(username, data) {
+    usersData[username] = { ...usersData[username], ...data };
+    saveUsers();
+}
+
+// Elementos DOM
 const chat = document.getElementById("chat-container");
 const inputBox = document.getElementById("input-box");
 const userInput = document.getElementById("user-input");
 const sendBtn = document.getElementById("send-btn");
+const appDiv = document.getElementById("app");
+const loginOverlay = document.getElementById("login-overlay");
 
 // =========================
-// 🌌 ESTRELLAS (igual que antes)
+// 🌌 ESTRELLAS
 // =========================
 function createStars() {
     const container = document.getElementById("stars");
@@ -63,8 +100,14 @@ initStars();
 // =========================
 // 🔧 UTILIDADES
 // =========================
-function scrollToBottom() { if (chat) chat.scrollTop = chat.scrollHeight; }
+function scrollToBottom() {
+    if (chat) {
+        chat.scrollTop = chat.scrollHeight;
+    }
+}
+
 function setInputEnabled(enabled) {
+    state.isTyping = !enabled;
     if (enabled) {
         inputBox.classList.remove("disabled");
         userInput.disabled = false;
@@ -77,16 +120,66 @@ function setInputEnabled(enabled) {
     }
 }
 
-function updateSavedCounter() {
-    const counterEl = document.getElementById('saved-counter');
-    if (counterEl) counterEl.innerHTML = `💰 Ahorro total: ${state.savedTotal}€`;
-    localStorage.setItem('savedMoney', state.savedTotal);
+function updateStatsDisplay() {
+    if (!state.user) return;
+    const userData = getUserData(state.user);
+    document.getElementById('stat-saved').innerHTML = `${userData.savedTotal}€`;
+    document.getElementById('stat-streak').innerHTML = `${userData.streak} días`;
+    document.getElementById('stat-avoided').innerHTML = userData.avoidedCount;
+    document.getElementById('stat-tips').innerHTML = userData.tipsCount;
+}
+
+function updateHistoryDisplay() {
+    if (!state.user) return;
+    const userData = getUserData(state.user);
+    const historyDiv = document.getElementById('history-list');
+    if (!historyDiv) return;
+    
+    if (userData.history.length === 0) {
+        historyDiv.innerHTML = '<p style="text-align:center; opacity:0.7;">✨ Aún no hay decisiones. ¡Analiza tu primer gasto!</p>';
+        return;
+    }
+    
+    historyDiv.innerHTML = userData.history.map(item => `
+        <div class="history-item">
+            <span class="item-name">${item.item}</span>
+            <span class="item-price">${item.price}€</span>
+            <span class="item-decision ${item.decision === 'evitado' ? 'avoided' : 'bought'}">${item.decision === 'evitado' ? '✅ Evitado' : '🛒 Comprado'}</span>
+            <span class="item-date">${item.date}</span>
+        </div>
+    `).join('');
 }
 
 function addToHistory(item, price, decision) {
-    state.lastDecisions.unshift({ item, price, decision, date: new Date().toLocaleDateString() });
-    if (state.lastDecisions.length > 10) state.lastDecisions.pop();
-    localStorage.setItem('lastDecisions', JSON.stringify(state.lastDecisions));
+    if (!state.user) return;
+    const userData = getUserData(state.user);
+    userData.history.unshift({
+        item,
+        price,
+        decision,
+        date: new Date().toLocaleDateString()
+    });
+    if (userData.history.length > 20) userData.history.pop();
+    updateUserData(state.user, { history: userData.history });
+    updateHistoryDisplay();
+}
+
+function updateStreak() {
+    if (!state.user) return;
+    const userData = getUserData(state.user);
+    const today = new Date().toDateString();
+    if (userData.lastDate !== today) {
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        if (userData.lastDate === yesterday.toDateString()) {
+            userData.streak++;
+        } else {
+            userData.streak = 1;
+        }
+        userData.lastDate = today;
+        updateUserData(state.user, { streak: userData.streak, lastDate: today });
+        updateStatsDisplay();
+    }
 }
 
 // =========================
@@ -124,14 +217,26 @@ async function extractFromText(text) {
     }
 }
 
-async function getAdvice(product, price, needOrWant, saved) {
+async function getAdvice(product, price, needOrWant) {
     try {
+        const userData = getUserData(state.user);
         const res = await fetch("http://localhost:3000/advice", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ product, price, needOrWant, saved })
+            body: JSON.stringify({ 
+                product, 
+                price, 
+                needOrWant, 
+                saved: userData.savedTotal 
+            })
         });
         const data = await res.json();
+        
+        // Incrementar contador de tips
+        userData.tipsCount++;
+        updateUserData(state.user, { tipsCount: userData.tipsCount });
+        updateStatsDisplay();
+        
         return data.advice;
     } catch (e) {
         return "¿Realmente necesitas esto? Espera 24 horas antes de decidir. 💭";
@@ -143,7 +248,6 @@ async function getAdvice(product, price, needOrWant, saved) {
 // =========================
 async function handleFlow(input) {
     
-    // PASO 1: Extraer producto y precio
     if (state.step === 'START') {
         const { product, price } = await extractFromText(input);
         
@@ -159,11 +263,10 @@ async function handleFlow(input) {
         await aiSpeak([
             `✅ Entendido: ${product} por ${price}€.`,
             `Antes de decidir, dime una cosa...`,
-            `¿Es algo que necesitas sí o sí (por ejemplo, se te rompió) o es más un capricho que te apetece?`
+            `¿Es algo que necesitas sí o sí (ej: se te rompió) o es más un capricho que te apetece?`
         ]);
     }
     
-    // PASO 2: Preguntar necesidad vs capricho
     else if (state.step === 'ASK_NEED') {
         const lower = input.toLowerCase();
         if (lower.includes("necesito") || lower.includes("necesidad") || lower.includes("se me rompió") || lower.includes("sí o sí")) {
@@ -171,45 +274,41 @@ async function handleFlow(input) {
         } else {
             state.needOrWant = "capricho";
         }
-        state.step = 'ASK_SAVINGS';
-        
-        await aiSpeak([
-            `Entiendo. Es un ${state.needOrWant === "necesidad" ? "gasto necesario" : "capricho"}.`,
-            `¿Ya tienes el dinero ahorrado para esto o tendrías que sacarlo de otro lado?`
-        ]);
-    }
-    
-    // PASO 3: Preguntar si tiene ahorrado
-    else if (state.step === 'ASK_SAVINGS') {
         state.step = 'ADVICE';
         
-        // Obtener consejo de Gemini
         await aiSpeak(["🤔 Déjame pensar un momento..."]);
-        const advice = await getAdvice(state.itemName, state.itemPrice, state.needOrWant, state.savedTotal);
+        const advice = await getAdvice(state.itemName, state.itemPrice, state.needOrWant);
         
         await aiSpeak([advice]);
         
         await aiSpeak([
-            `Si decides NO comprarlo, sumarás ${state.itemPrice}€ a tu contador de "gastos evitados".`,
+            `Si decides NO comprarlo, sumarás ${state.itemPrice}€ a tu ahorro total.`,
             `¿Qué decides? (responde "comprar" o "no comprar")`
         ]);
         
         state.step = 'DECISION';
     }
     
-    // PASO 4: Decisión final
     else if (state.step === 'DECISION') {
         const lower = input.toLowerCase();
+        const userData = getUserData(state.user);
         
         if (lower.includes("no comprar") || lower.includes("no lo compro") || lower.includes("evitar")) {
             // Ahorrar el dinero
-            state.savedTotal += state.itemPrice;
-            updateSavedCounter();
+            userData.savedTotal += state.itemPrice;
+            userData.avoidedCount++;
+            updateUserData(state.user, { 
+                savedTotal: userData.savedTotal, 
+                avoidedCount: userData.avoidedCount 
+            });
+            updateStatsDisplay();
             addToHistory(state.itemName, state.itemPrice, "evitado");
+            updateStreak();
             
             await aiSpeak([
                 `🎉 ¡Bien hecho! Has evitado gastar ${state.itemPrice}€.`,
-                `💰 Total ahorrado hasta ahora: ${state.savedTotal}€`,
+                `💰 Total ahorrado: ${userData.savedTotal}€`,
+                `🔥 Racha: ${userData.streak} días seguidos`,
                 `¿Quieres analizar otro gasto? Escríbeme lo que estás pensando comprar.`
             ]);
         } else if (lower.includes("comprar") || lower.includes("lo compro") || lower.includes("si")) {
@@ -225,7 +324,6 @@ async function handleFlow(input) {
             return;
         }
         
-        // Resetear para el siguiente análisis
         state.step = 'START';
     }
 }
@@ -257,11 +355,12 @@ async function sendMessage() {
 }
 
 // =========================
-// 🍔 MENÚ Y CONTADOR
+// 🍔 MENÚ
 // =========================
 function initMenu() {
     const menuIcon = document.getElementById('menu-icon');
     const menuNav = document.getElementById('menu-nav');
+    const menuItems = document.querySelectorAll('.menu-list li');
     const featureContents = document.querySelectorAll('.feature-content');
     const inputBoxEl = document.getElementById('input-box');
     
@@ -277,28 +376,88 @@ function initMenu() {
             }
         });
     }
+    
+    menuItems.forEach(item => {
+        item.addEventListener('click', () => {
+            const feature = item.dataset.feature;
+            menuItems.forEach(i => i.classList.remove('active'));
+            item.classList.add('active');
+            featureContents.forEach(content => content.classList.remove('active'));
+            const activeContent = document.getElementById(`${feature}-container`);
+            if (activeContent) activeContent.classList.add('active');
+            if (inputBoxEl) inputBoxEl.style.display = feature === 'chat' ? 'flex' : 'none';
+            if (menuIcon && menuNav) {
+                menuIcon.classList.remove('active');
+                menuNav.classList.remove('open');
+            }
+            
+            if (feature === 'history') updateHistoryDisplay();
+            if (feature === 'stats') updateStatsDisplay();
+        });
+    });
 }
 
-function init() {
-    initMenu();
-    updateSavedCounter();
+// =========================
+// 👤 LOGIN
+// =========================
+function initLogin() {
+    loadUsers();
     
-    // Añadir contador visible
-    const appDiv = document.getElementById('app');
-    const counterDiv = document.createElement('div');
-    counterDiv.id = 'saved-counter';
-    counterDiv.className = 'saved-counter';
-    counterDiv.innerHTML = `💰 Ahorro total: ${state.savedTotal}€`;
-    appDiv.insertBefore(counterDiv, appDiv.firstChild);
+    document.getElementById('login-btn').addEventListener('click', () => {
+        const username = document.getElementById('login-username').value.trim();
+        if (!username) {
+            alert("Por favor, escribe un nombre");
+            return;
+        }
+        
+        state.user = username;
+        const userData = getUserData(username);
+        
+        // Ocultar login y mostrar app
+        loginOverlay.style.display = 'none';
+        appDiv.style.display = 'flex';
+        
+        // Actualizar displays
+        updateStatsDisplay();
+        updateHistoryDisplay();
+        
+        // Mensaje de bienvenida
+        setTimeout(() => {
+            aiSpeak([
+                `👋 ¡Hola ${username}! Soy GastoZero.`,
+                `Te ayudo a pensar antes de comprar.`,
+                `Hasta ahora has ahorrado ${userData.savedTotal}€. ¡Sigue así!`,
+                `Cuéntame, ¿qué estás pensando comprar y cuánto cuesta?`
+            ]);
+        }, 500);
+    });
+    
+    // Enter en login
+    document.getElementById('login-password').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') document.getElementById('login-btn').click();
+    });
+    document.getElementById('login-username').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') document.getElementById('login-btn').click();
+    });
+}
+
+// =========================
+// 🎯 INICIALIZAR
+// =========================
+document.addEventListener('DOMContentLoaded', () => {
+    initMenu();
+    initLogin();
     
     sendBtn.onclick = sendMessage;
-    userInput.addEventListener("keypress", (e) => { if (e.key === "Enter") sendMessage(); });
-    setInputEnabled(true);
+    userInput.addEventListener("keypress", (e) => { 
+        if (e.key === "Enter" && !state.isTyping) {
+            e.preventDefault();
+            sendMessage();
+        }
+    });
     
-    // Mensaje de bienvenida
-    setTimeout(() => {
-        aiSpeak(["👋 ¡Hola! Soy GastoZero. Te ayudo a pensar antes de comprar.", "Cuéntame, ¿qué estás pensando comprar y cuánto cuesta?"]);
-    }, 500);
-}
-
-document.addEventListener('DOMContentLoaded', init);
+    // Auto-scroll en móvil al abrir teclado
+    window.addEventListener('resize', () => {
+        setTimeout(scrollToBottom, 100);
+    });
+});
