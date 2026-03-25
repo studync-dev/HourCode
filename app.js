@@ -1,5 +1,5 @@
 /**
- * GastoZero v2 - Con login y estadísticas
+ * GastoZero v3 - Con login funcional y estrellas mejoradas
  */
 
 let state = {
@@ -54,34 +54,48 @@ const appDiv = document.getElementById("app");
 const loginOverlay = document.getElementById("login-overlay");
 
 // =========================
-// 🌌 ESTRELLAS
+// 🌌 ESTRELLAS DIFERENTES Y BONITAS
 // =========================
 function createStars() {
-    const container = document.getElementById("stars");
-    const count = 200;
+    const container = document.getElementById("stars-layer");
     if (!container) return;
     container.innerHTML = '';
-    for (let i = 0; i < count; i++) {
+    
+    // Estrellas normales (más cantidad)
+    const starCount = 150;
+    for (let i = 0; i < starCount; i++) {
         const star = document.createElement("div");
-        star.className = "star";
-        const size = Math.random() * 3 + 1;
+        star.className = "star-particle";
+        const size = Math.random() * 2 + 1;
         star.style.width = size + "px";
         star.style.height = size + "px";
         star.style.top = Math.random() * 100 + "%";
         star.style.left = Math.random() * 100 + "%";
-        star.style.opacity = Math.random() * 0.7 + 0.3;
-        star.style.animationDuration = (Math.random() * 3 + 2) + "s";
-        star.style.animationDelay = (Math.random() * 3) + "s";
-        if (size > 2.5) star.classList.add("big");
-        else if (size > 1.5) star.classList.add("medium");
-        else star.classList.add("small");
-        if (Math.random() < 0.1) star.classList.add("colored");
+        star.style.opacity = Math.random() * 0.5 + 0.2;
+        star.style.animationDelay = Math.random() * 8 + "s";
+        star.style.animationDuration = (Math.random() * 6 + 5) + "s";
+        container.appendChild(star);
+    }
+    
+    // Estrellas brillantes (menos cantidad, más brillo)
+    const brightCount = 40;
+    for (let i = 0; i < brightCount; i++) {
+        const star = document.createElement("div");
+        star.className = "star-bright";
+        const size = Math.random() * 3 + 2;
+        star.style.width = size + "px";
+        star.style.height = size + "px";
+        star.style.top = Math.random() * 100 + "%";
+        star.style.left = Math.random() * 100 + "%";
+        star.style.animationDelay = Math.random() * 3 + "s";
+        star.style.animationDuration = (Math.random() * 2 + 2) + "s";
         container.appendChild(star);
     }
 }
 
+// Estrellas fugaces más elegantes
 function createShootingStar() {
-    const container = document.getElementById("stars");
+    const container = document.getElementById("stars-layer");
     if (!container) return;
     const star = document.createElement("div");
     star.className = "shooting-star";
@@ -93,7 +107,9 @@ function createShootingStar() {
 
 function initStars() {
     createStars();
-    setInterval(() => { if (Math.random() < 0.3) createShootingStar(); }, 10000);
+    setInterval(() => {
+        if (Math.random() < 0.25) createShootingStar();
+    }, 12000);
 }
 initStars();
 
@@ -120,13 +136,27 @@ function setInputEnabled(enabled) {
     }
 }
 
+function updateFloatingCounter() {
+    if (!state.user) return;
+    const userData = getUserData(state.user);
+    const counterEl = document.getElementById('counter-value');
+    if (counterEl) counterEl.innerHTML = `${userData.savedTotal}€`;
+}
+
 function updateStatsDisplay() {
     if (!state.user) return;
     const userData = getUserData(state.user);
-    document.getElementById('stat-saved').innerHTML = `${userData.savedTotal}€`;
-    document.getElementById('stat-streak').innerHTML = `${userData.streak} días`;
-    document.getElementById('stat-avoided').innerHTML = userData.avoidedCount;
-    document.getElementById('stat-tips').innerHTML = userData.tipsCount;
+    const savedEl = document.getElementById('stat-saved');
+    const streakEl = document.getElementById('stat-streak');
+    const avoidedEl = document.getElementById('stat-avoided');
+    const tipsEl = document.getElementById('stat-tips');
+    
+    if (savedEl) savedEl.innerHTML = `${userData.savedTotal}€`;
+    if (streakEl) streakEl.innerHTML = `${userData.streak} días`;
+    if (avoidedEl) avoidedEl.innerHTML = userData.avoidedCount;
+    if (tipsEl) tipsEl.innerHTML = userData.tipsCount;
+    
+    updateFloatingCounter();
 }
 
 function updateHistoryDisplay() {
@@ -140,7 +170,7 @@ function updateHistoryDisplay() {
         return;
     }
     
-    historyDiv.innerHTML = userData.history.map(item => `
+    historyDiv.innerHTML = userData.history.slice(0, 15).map(item => `
         <div class="history-item">
             <span class="item-name">${item.item}</span>
             <span class="item-price">${item.price}€</span>
@@ -159,7 +189,7 @@ function addToHistory(item, price, decision) {
         decision,
         date: new Date().toLocaleDateString()
     });
-    if (userData.history.length > 20) userData.history.pop();
+    if (userData.history.length > 30) userData.history.pop();
     updateUserData(state.user, { history: userData.history });
     updateHistoryDisplay();
 }
@@ -201,11 +231,11 @@ async function aiSpeak(messages) {
 }
 
 // =========================
-// 🤖 LLAMADA A GEMINI
+// 🤖 LLAMADA AL BACKEND (Gemini)
 // =========================
 async function extractFromText(text) {
     try {
-        const res = await fetch("http://localhost:3000/extract", {
+        const res = await fetch("https://hourcode.onrender.com/extract", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ text })
@@ -213,6 +243,7 @@ async function extractFromText(text) {
         const data = await res.json();
         return { product: data.object, price: data.price };
     } catch (e) {
+        console.error("Error backend:", e);
         return { product: "algo", price: 0 };
     }
 }
@@ -220,7 +251,7 @@ async function extractFromText(text) {
 async function getAdvice(product, price, needOrWant) {
     try {
         const userData = getUserData(state.user);
-        const res = await fetch("http://localhost:3000/advice", {
+        const res = await fetch("https://hourcode.onrender.com/advice", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ 
@@ -232,7 +263,6 @@ async function getAdvice(product, price, needOrWant) {
         });
         const data = await res.json();
         
-        // Incrementar contador de tips
         userData.tipsCount++;
         updateUserData(state.user, { tipsCount: userData.tipsCount });
         updateStatsDisplay();
@@ -269,7 +299,7 @@ async function handleFlow(input) {
     
     else if (state.step === 'ASK_NEED') {
         const lower = input.toLowerCase();
-        if (lower.includes("necesito") || lower.includes("necesidad") || lower.includes("se me rompió") || lower.includes("sí o sí")) {
+        if (lower.includes("necesito") || lower.includes("necesidad") || lower.includes("se me rompió") || lower.includes("sí o sí") || lower.includes("si o si")) {
             state.needOrWant = "necesidad";
         } else {
             state.needOrWant = "capricho";
@@ -293,8 +323,7 @@ async function handleFlow(input) {
         const lower = input.toLowerCase();
         const userData = getUserData(state.user);
         
-        if (lower.includes("no comprar") || lower.includes("no lo compro") || lower.includes("evitar")) {
-            // Ahorrar el dinero
+        if (lower.includes("no comprar") || lower.includes("no lo compro") || lower.includes("evitar") || lower.includes("no compro")) {
             userData.savedTotal += state.itemPrice;
             userData.avoidedCount++;
             updateUserData(state.user, { 
@@ -311,153 +340,5 @@ async function handleFlow(input) {
                 `🔥 Racha: ${userData.streak} días seguidos`,
                 `¿Quieres analizar otro gasto? Escríbeme lo que estás pensando comprar.`
             ]);
-        } else if (lower.includes("comprar") || lower.includes("lo compro") || lower.includes("si")) {
-            addToHistory(state.itemName, state.itemPrice, "comprado");
-            
-            await aiSpeak([
-                `👍 Está bien. Es tu decisión.`,
-                `💡 Consejo: Antes de comprar, espera 24 horas. Si sigues queriéndolo, adelante.`,
-                `¿Quieres analizar otro gasto? Escríbeme lo que estás pensando comprar.`
-            ]);
-        } else {
-            await aiSpeak(["No te he entendido. ¿Comprar o no comprar?"]);
-            return;
-        }
-        
-        state.step = 'START';
-    }
-}
-
-// =========================
-// 🎯 ENVIAR MENSAJE
-// =========================
-async function sendMessage() {
-    if (state.isTyping) return;
-    if (!userInput.value.trim()) return;
-
-    const message = userInput.value.trim();
-    chat.style.display = "flex";
-    const userMsg = document.createElement("div");
-    userMsg.className = "message user";
-    userMsg.innerText = message;
-    chat.appendChild(userMsg);
-    scrollToBottom();
-    userInput.value = "";
-    setInputEnabled(false);
-    
-    try {
-        await handleFlow(message);
-    } catch (error) {
-        console.error(error);
-        await aiSpeak(["Ha ocurrido un error. Inténtalo de nuevo."]);
-    }
-    setInputEnabled(true);
-}
-
-// =========================
-// 🍔 MENÚ
-// =========================
-function initMenu() {
-    const menuIcon = document.getElementById('menu-icon');
-    const menuNav = document.getElementById('menu-nav');
-    const menuItems = document.querySelectorAll('.menu-list li');
-    const featureContents = document.querySelectorAll('.feature-content');
-    const inputBoxEl = document.getElementById('input-box');
-    
-    if (menuIcon && menuNav) {
-        menuIcon.addEventListener('click', () => {
-            menuIcon.classList.toggle('active');
-            menuNav.classList.toggle('open');
-        });
-        document.addEventListener('click', (e) => {
-            if (!menuIcon.contains(e.target) && !menuNav.contains(e.target) && menuNav.classList.contains('open')) {
-                menuIcon.classList.remove('active');
-                menuNav.classList.remove('open');
-            }
-        });
-    }
-    
-    menuItems.forEach(item => {
-        item.addEventListener('click', () => {
-            const feature = item.dataset.feature;
-            menuItems.forEach(i => i.classList.remove('active'));
-            item.classList.add('active');
-            featureContents.forEach(content => content.classList.remove('active'));
-            const activeContent = document.getElementById(`${feature}-container`);
-            if (activeContent) activeContent.classList.add('active');
-            if (inputBoxEl) inputBoxEl.style.display = feature === 'chat' ? 'flex' : 'none';
-            if (menuIcon && menuNav) {
-                menuIcon.classList.remove('active');
-                menuNav.classList.remove('open');
-            }
-            
-            if (feature === 'history') updateHistoryDisplay();
-            if (feature === 'stats') updateStatsDisplay();
-        });
-    });
-}
-
-// =========================
-// 👤 LOGIN
-// =========================
-function initLogin() {
-    loadUsers();
-    
-    document.getElementById('login-btn').addEventListener('click', () => {
-        const username = document.getElementById('login-username').value.trim();
-        if (!username) {
-            alert("Por favor, escribe un nombre");
-            return;
-        }
-        
-        state.user = username;
-        const userData = getUserData(username);
-        
-        // Ocultar login y mostrar app
-        loginOverlay.style.display = 'none';
-        appDiv.style.display = 'flex';
-        
-        // Actualizar displays
-        updateStatsDisplay();
-        updateHistoryDisplay();
-        
-        // Mensaje de bienvenida
-        setTimeout(() => {
-            aiSpeak([
-                `👋 ¡Hola ${username}! Soy GastoZero.`,
-                `Te ayudo a pensar antes de comprar.`,
-                `Hasta ahora has ahorrado ${userData.savedTotal}€. ¡Sigue así!`,
-                `Cuéntame, ¿qué estás pensando comprar y cuánto cuesta?`
-            ]);
-        }, 500);
-    });
-    
-    // Enter en login
-    document.getElementById('login-password').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') document.getElementById('login-btn').click();
-    });
-    document.getElementById('login-username').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') document.getElementById('login-btn').click();
-    });
-}
-
-// =========================
-// 🎯 INICIALIZAR
-// =========================
-document.addEventListener('DOMContentLoaded', () => {
-    initMenu();
-    initLogin();
-    
-    sendBtn.onclick = sendMessage;
-    userInput.addEventListener("keypress", (e) => { 
-        if (e.key === "Enter" && !state.isTyping) {
-            e.preventDefault();
-            sendMessage();
-        }
-    });
-    
-    // Auto-scroll en móvil al abrir teclado
-    window.addEventListener('resize', () => {
-        setTimeout(scrollToBottom, 100);
-    });
-});
+        } else if (lower.includes("comprar") || lower.includes("lo compro") || lower.includes("si") || lower.includes("compro")) {
+            addToHistory
