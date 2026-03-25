@@ -6,180 +6,110 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 🔑 PON AQUÍ TU API KEY de DeepSeek
-const DEEPSEEK_API_KEY = "sk-37d2b0a37a2f459e970782fa955f9438";
+// 🔑 PON AQUÍ TU API KEY DE GEMINI
+const GEMINI_API_KEY = "TU_API_KEY_AQUI";
 
-// Ruta existente para extraer producto
+// Ruta para extraer producto y precio
 app.post("/extract", async (req, res) => {
     let { text } = req.body;
-
-    console.log("📝 Texto original:", text);
-
-    // 🔥 LIMPIAR TEXTO ANTES DE ENVIAR A LA IA
-    let cleanedText = text
-        .replace(/mira\s*/gi, "")
-        .replace(/me llamo\s+[\w\s]+[,.]/gi, "")
-        .replace(/vivo\s+[\w\s]+[,.]/gi, "")
-        .replace(/tengo\s+\d+\s*años?/gi, "")
-        .replace(/loq ue pasa es que\s*/gi, "")
-        .replace(/lo que pasa es que\s*/gi, "")
-        .replace(/es algo caro y\s*/gi, "")
-        .replace(/quiero comprar\s+(?:un|una|el|la)?\s*/gi, "")
-        .trim();
-
-    console.log("🧹 Texto limpio:", cleanedText);
+    
+    console.log("📝 Texto recibido:", text);
 
     try {
-        const response = await fetch("https://api.deepseek.com/v1/chat/completions", {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
             method: "POST",
-            headers: {
-                "Authorization": `Bearer ${DEEPSEEK_API_KEY}`,
-                "Content-Type": "application/json"
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                model: "deepseek-chat",
-                messages: [
-                    {
-                        role: "system",
-                        content: `Eres un extractor de productos. Responde SOLO con el nombre del producto, UNA SOLA PALABRA.
+                contents: [{
+                    parts: [{
+                        text: `Eres un extractor de productos. Analiza este texto y responde SOLO con el producto y el precio en este formato exacto:
 
-REGLAS:
-- Responde con 1 palabra, máximo 2 si es necesario (ej: "silla gaming" se permite)
-- NO uses frases
-- NO uses contexto personal
-- Si el producto es "ordenador", responde "ordenador"
-- Si el producto es "servidor multiusos", responde "servidor multiusos"
-- Ignora palabras como "loq", "ue", "pasa", "caro", "cuesta"
+PRODUCTO: [nombre del producto]
+PRECIO: [número]
 
-EJEMPLOS:
-Texto: "quiero comprar un ordenador loq ue pasa es que es caro"
-Respuesta: ordenador
+Reglas:
+- El producto puede tener 1-3 palabras
+- Si no ves un precio claro, pon PRECIO: 0
+- Perdona faltas de ortografía (ej: "cuestas" = cuesta)
+- Ignora nombres, edades, ciudades
 
-Texto: "servidor multiusos 800€"
-Respuesta: servidor multiusos
-
-Texto: "iphone 15 pro max"
-Respuesta: iphone 15 pro max`
-                    },
-                    {
-                        role: "user",
-                        content: `¿Qué producto quiere comprar? Responde con 1-2 palabras: "${cleanedText}"`
-                    }
-                ],
-                temperature: 0,
-                max_tokens: 15
+Texto: "${text}"`
+                    }]
+                }],
+                generationConfig: {
+                    temperature: 0,
+                    maxOutputTokens: 50
+                }
             })
         });
 
         const data = await response.json();
+        const respuesta = data.candidates[0].content.parts[0].text;
         
-        if (!data.choices || !data.choices[0] || !data.choices[0].message) {
-            console.error("Respuesta inválida de DeepSeek:", data);
-            return res.json({ object: "algo" });
-        }
+        // Extraer producto y precio
+        const productMatch = respuesta.match(/PRODUCTO:\s*(.+)/i);
+        const priceMatch = respuesta.match(/PRECIO:\s*(\d+)/i);
         
-        let result = data.choices[0].message.content.trim().toLowerCase();
+        const producto = productMatch ? productMatch[1].trim().toLowerCase() : "algo";
+        const precio = priceMatch ? parseFloat(priceMatch[1]) : 0;
         
-        // Limpiar caracteres raros
-        result = result.replace(/[^a-záéíóúñ0-9\s]/g, "");
-        
-        // Tomar SOLO las primeras 2 palabras
-        const words = result.split(/\s+/).slice(0, 2);
-        result = words.join(" ");
-        
-        // Lista negra de palabras basura
-        const palabrasBasura = ["loq", "ue", "pasa", "caro", "cuesta", "es", "que", "algo", "quiero", "comprar"];
-        
-        // Si el resultado es solo basura, intentar buscar palabra clave
-        if (palabrasBasura.includes(result) || result.length < 3) {
-            const palabrasClave = ["ordenador", "portátil", "servidor", "silla", "torre", "iphone", "teclado", "ratón", "monitor"];
-            for (let palabra of palabrasClave) {
-                if (text.toLowerCase().includes(palabra)) {
-                    result = palabra;
-                    break;
-                }
-            }
-        }
-
-        if (!result || result === "comprar" || result === "quiero" || result.length < 2) {
-            result = "algo";
-        }
-
-        console.log("🧠 IA extrajo:", result);
-        res.json({ object: result });
+        console.log("🧠 Extraído:", { producto, precio });
+        res.json({ object: producto, price: precio });
 
     } catch (err) {
-        console.error("Error en /extract:", err);
-        res.json({ object: "algo" });
+        console.error("Error Gemini:", err);
+        res.json({ object: "algo", price: 0 });
     }
 });
 
-// 🆕 NUEVA RUTA: Consejo economista con IA
+// Ruta para el consejo amigable
 app.post("/advice", async (req, res) => {
-    const { product, price, hourlyWage, savings, decision } = req.body;
-    
-    const totalHours = (price / hourlyWage).toFixed(1);
-    const remaining = Math.max(0, price - savings);
-    const remainingHours = (remaining / hourlyWage).toFixed(1);
+    const { product, price, needOrWant, saved, alternatives } = req.body;
     
     const prompt = `
-Contexto de la conversación:
+Eres "GastoZero", un asistente amigable que ayuda a evitar gastos innecesarios.
+
+Contexto:
 - Producto: ${product} (${price}€)
-- Gana por hora: ${hourlyWage}€
-- Ahorros: ${savings}€
-- Total horas necesarias: ${totalHours} horas
-- Le faltan: ${remaining}€ (${remainingHours} horas)
-- Decisión final: ${decision === "si" ? "VA A COMPRARLO" : "NO LO VA A COMPRAR"}
+- El usuario dice que es: ${needOrWant || "no especificado"}
+- Dinero ahorrado hasta ahora: ${saved || 0}€
 
-Eres un economista experto en finanzas personales y psicología del consumo.
-Analiza esta situación y da un consejo profundo y reflexivo.
+Reglas:
+- Responde en español natural y cercano
+- Sé empático, no sermonees
+- Usa emojis con moderación
+- Da un consejo útil y breve (máximo 3 líneas)
+- Termina con una pregunta que invite a reflexionar
 
-REGLAS:
-- Sé conciso pero profundo (máximo 4 líneas)
-- Usa un tono sabio pero cercano
-- Si decidió comprar: hazle reflexionar sobre el valor real del tiempo
-- Si decidió no comprar: refuerza su decisión con sabiduría financiera
-- No repitas los números, enfócate en la reflexión
-- Termina con una pregunta que lo haga pensar
-`;
+Responde:`;
 
     try {
-        const response = await fetch("https://api.deepseek.com/v1/chat/completions", {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
             method: "POST",
-            headers: {
-                "Authorization": `Bearer ${DEEPSEEK_API_KEY}`,
-                "Content-Type": "application/json"
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                model: "deepseek-chat",
-                messages: [
-                    {
-                        role: "system",
-                        content: "Eres un economista sabio y reflexivo. Das consejos profundos sobre finanzas personales y el valor del tiempo."
-                    },
-                    {
-                        role: "user",
-                        content: prompt
-                    }
-                ],
-                temperature: 0.8,
-                max_tokens: 150
+                contents: [{
+                    parts: [{ text: prompt }]
+                }],
+                generationConfig: {
+                    temperature: 0.8,
+                    maxOutputTokens: 150
+                }
             })
         });
 
         const data = await response.json();
-        let advice = data.choices[0].message.content.trim();
+        const advice = data.candidates[0].content.parts[0].text;
         
-        console.log("💡 Consejo economista:", advice);
+        console.log("💡 Consejo:", advice);
         res.json({ advice });
 
     } catch (err) {
-        console.error("Error en /advice:", err);
-        res.json({ advice: "El dinero es tiempo. Cada euro que gastas son minutos de tu vida. ¿Realmente vale la pena?" });
+        console.error("Error consejo:", err);
+        res.json({ advice: "¿Realmente necesitas esto o es un impulso? Espera 24 horas y decide." });
     }
 });
 
 app.listen(3000, () => {
-    console.log("🚀 Servidor corriendo en http://localhost:3000");
-    console.log("📡 Rutas: /extract y /advice");
+    console.log("🚀 Servidor con Gemini corriendo en http://localhost:3000");
 });
