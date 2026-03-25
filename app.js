@@ -1,5 +1,5 @@
 /**
- * GastoZero v8 - Con contexto persistente y mejor detección
+ * GastoZero v9 - Detección inteligente de productos con compromise.js
  */
 
 let state = {
@@ -11,7 +11,7 @@ let state = {
     isTyping: false,
     lastItem: null,
     lastPrice: 0,
-    waitingForDecision: false  // Para manejar respuestas fuera de flujo
+    waitingForDecision: false
 };
 
 // Datos de usuarios (localStorage)
@@ -233,67 +233,102 @@ async function aiSpeak(messages) {
 }
 
 // =========================
-// 🤖 DETECCIÓN MEJORADA DE PRODUCTOS
+// 🧠 DETECCIÓN INTELIGENTE DE PRODUCTOS CON COMPROMISE.JS
 // =========================
-const productosDetallados = {
-    // Coches de lujo
-    "lambo": "Lamborghini", "lamborghini": "Lamborghini",
-    "ferrari": "Ferrari", "porsche": "Porsche", "bugatti": "Bugatti",
-    "coche": "coche", "carro": "coche", "auto": "coche",
-    // Tecnología
-    "iphone": "iPhone", "samsung": "Samsung", "macbook": "MacBook",
-    "ordenador": "ordenador", "portátil": "portátil", "pc": "ordenador",
-    "cascos": "cascos", "auriculares": "auriculares",
-    // Moda
-    "zapatos": "zapatos", "zapatillas": "zapatillas",
-    // Muebles
-    "silla": "silla", "teclado": "teclado", "ratón": "ratón", "monitor": "monitor"
-};
 
-function detectarProducto(texto) {
-    const lower = texto.toLowerCase();
+// Limpiar texto de palabras irrelevantes
+function limpiarTexto(texto) {
+    // Palabras que no son productos
+    const palabrasBasura = [
+        'quiero', 'comprar', 'compro', 'necesito', 'tengo', 'me', 'un', 'una', 'unos', 'unas',
+        'el', 'la', 'los', 'las', 'que', 'de', 'por', 'para', 'con', 'sin', 'sobre', 'cuesta',
+        'cuestas', 'vale', 'costo', 'precio', 'euros', 'euro', '€', 'es', 'está', 'son', 'y',
+        'o', 'pero', 'porque', 'cuando', 'como', 'esto', 'eso', 'aquello', 'ese', 'esa', 'cual',
+        'tope', 'guapo', 'chaval', 'esta', 'mazo', 'flipante', 'brutal', 'genial'
+    ];
     
-    // Detectar modelos específicos (M1, M2, etc)
-    const modelMatch = texto.match(/([A-Za-z]+)\s+(M\d+)/i);
-    if (modelMatch) {
-        const marca = modelMatch[1];
-        const modelo = modelMatch[2];
-        for (let [key, value] of Object.entries(productosDetallados)) {
-            if (lower.includes(key)) {
-                return `${value} ${modelo}`;
-            }
-        }
-        return `${marca} ${modelo}`;
-    }
+    let palabras = texto.toLowerCase().split(/\s+/);
+    palabras = palabras.filter(p => !palabrasBasura.includes(p) && p.length > 2);
     
-    // Detectar productos normales
-    for (let [key, value] of Object.entries(productosDetallados)) {
-        if (lower.includes(key)) {
-            return value;
-        }
-    }
-    
-    // Buscar la última palabra relevante
-    const palabras = texto.split(/\s+/);
-    const palabrasValidas = palabras.filter(p => 
-        !["un", "una", "el", "la", "los", "las", "comprar", "compro", "quiero", "necesito", 
-          "me", "de", "que", "top", "guapo", "chaval", "esta", "tope", "por", "cuesta", "cuestas"].includes(p.toLowerCase())
-    );
-    
-    if (palabrasValidas.length > 0) {
-        return palabrasValidas[palabrasValidas.length - 1];
-    }
-    
-    return "producto";
+    return palabras.join(' ');
 }
 
-function extractLocalPrice(text) {
+function detectarProductoInteligente(texto) {
+    try {
+        // Primero, limpiar el texto
+        const textoLimpio = limpiarTexto(texto);
+        
+        // Usar compromise.js para analizar el texto
+        const doc = nlp(textoLimpio);
+        
+        // Estrategia 1: Buscar sustantivos (nouns)
+        let nouns = doc.nouns().out('array');
+        
+        // Estrategia 2: Buscar frases nominales
+        let nounPhrases = doc.match('#Noun+').out('array');
+        
+        // Combinar y limpiar
+        let candidatos = [...new Set([...nouns, ...nounPhrases])];
+        
+        // Filtrar candidatos (longitud > 2 y no son números)
+        candidatos = candidatos.filter(c => c.length > 2 && !/^\d+$/.test(c));
+        
+        if (candidatos.length > 0) {
+            // Devolver el candidato más largo (probablemente el producto principal)
+            const mejorCandidato = candidatos.reduce((a, b) => a.length >= b.length ? a : b);
+            console.log("🔍 Detectado con compromise:", mejorCandidato);
+            return mejorCandidato;
+        }
+        
+        // Estrategia 3: Si no hay sustantivos, buscar después de palabras clave
+        const keywords = ['comprar', 'compro', 'quiero', 'necesito', 'un', 'una', 'el', 'la'];
+        const textoLower = texto.toLowerCase();
+        let mejorMatch = null;
+        
+        for (let kw of keywords) {
+            const regex = new RegExp(`${kw}\\s+(\\w+)`, 'i');
+            const match = textoLower.match(regex);
+            if (match && match[1] && match[1].length > 2 && !/^\d+$/.test(match[1])) {
+                if (!mejorMatch || match[1].length > mejorMatch.length) {
+                    mejorMatch = match[1];
+                }
+            }
+        }
+        
+        if (mejorMatch) {
+            console.log("🔍 Detectado por keyword:", mejorMatch);
+            return mejorMatch;
+        }
+        
+        // Estrategia 4: Último recurso - tomar la palabra más larga que no sea común
+        const palabras = texto.split(/\s+/);
+        const palabrasFiltradas = palabras.filter(p => 
+            p.length > 3 && 
+            !/^\d+$/.test(p) &&
+            !['quiero', 'comprar', 'compro', 'necesito', 'cuesta', 'euros', '€'].includes(p.toLowerCase())
+        );
+        
+        if (palabrasFiltradas.length > 0) {
+            const resultado = palabrasFiltradas.reduce((a, b) => a.length >= b.length ? a : b);
+            console.log("🔍 Detectado por longitud:", resultado);
+            return resultado;
+        }
+        
+        return "producto";
+        
+    } catch (e) {
+        console.error("Error en detección:", e);
+        return "producto";
+    }
+}
+
+function extractLocalPrice(texto) {
     // Buscar números con € o euros
-    let match = text.match(/(\d+)\s*(€|euros?|eur)/i);
+    let match = texto.match(/(\d+)\s*(€|euros?|eur)/i);
     if (match) return parseFloat(match[1]);
     
-    // Buscar números sueltos
-    const numbers = text.match(/\d+/g);
+    // Buscar números sueltos (último número en el texto)
+    const numbers = texto.match(/\d+/g);
     if (numbers && numbers.length > 0) return parseFloat(numbers[numbers.length - 1]);
     
     return 0;
@@ -332,9 +367,9 @@ const BACKEND_URL = "https://hourcode.onrender.com";
 
 async function extractFromText(text) {
     const localPrice = extractLocalPrice(text);
-    const localProduct = detectarProducto(text);
+    const localProduct = detectarProductoInteligente(text);
     
-    console.log("🔍 Local:", { localProduct, localPrice });
+    console.log("🔍 Detección local:", { localProduct, localPrice });
     
     try {
         const res = await fetch(`${BACKEND_URL}/extract`, {
@@ -350,14 +385,12 @@ async function extractFromText(text) {
         }
         
         const data = await res.json();
-        console.log("🤖 IA:", data);
+        console.log("🤖 IA devolvió:", data);
         
-        // Si la IA devuelve algo útil
         if (data.price > 0 && data.object !== "desconocido" && data.object !== "algo") {
             return { product: data.object, price: data.price };
         }
         
-        // Usar detección local si la IA falla
         if (localPrice > 0) {
             return { product: localProduct, price: localPrice };
         }
@@ -365,7 +398,7 @@ async function extractFromText(text) {
         return { product: "producto", price: 0 };
         
     } catch (e) {
-        console.log("❌ Error conexión:", e);
+        console.log("❌ Error conexión, usando local:", e);
         if (localPrice > 0) return { product: localProduct, price: localPrice };
         return { product: "producto", price: 0 };
     }
@@ -411,37 +444,36 @@ async function handleFlow(input) {
     const userData = getUserData(state.user);
     const lowerInput = input.toLowerCase();
     
-    // Manejar decisiones fuera de flujo (como "al final he decidido no comprarlo")
-    if (state.waitingForDecision) {
-        if (lowerInput.includes("no comprar") || lowerInput.includes("no compro") || lowerInput.includes("no lo compro") || lowerInput.includes("no voy a comprar")) {
-            // Simular respuesta de no compra
-            userData.savedTotal += state.itemPrice;
-            userData.avoidedCount++;
-            const nuevoStreak = updateStreak();
-            updateUserData(state.user, { savedTotal: userData.savedTotal, avoidedCount: userData.avoidedCount });
-            updateStatsDisplay();
-            addToHistory(state.itemName, state.itemPrice, "evitado");
-            
-            await aiSpeak([
-                `🎉 ¡Excelente decisión, ${state.user}! Has evitado gastar ${state.itemPrice}€ en ${state.itemName}.`,
-                `💰 Total ahorrado: ${userData.savedTotal}€`,
-                `🔥 Llevas ${nuevoStreak} día${nuevoStreak !== 1 ? 's' : ''} reflexionando. ¡Qué disciplina!`,
-                `¿Quieres analizar otro gasto? Escríbeme lo que estás pensando comprar.`
-            ]);
-            state.step = 'START';
-            state.waitingForDecision = false;
-            return;
-        } else if (lowerInput.includes("comprar") || lowerInput.includes("lo compro")) {
-            addToHistory(state.itemName, state.itemPrice, "comprado");
-            await aiSpeak([
-                `👍 Vale, ${state.user}. Es tu decisión.`,
-                `💡 Consejo: espera 24 horas antes de comprar. Si aún lo quieres, adelante sin culpa.`,
-                `¿Quieres analizar otro gasto? Escríbeme lo que estás pensando comprar.`
-            ]);
-            state.step = 'START';
-            state.waitingForDecision = false;
-            return;
-        }
+    // Manejar decisiones fuera de flujo
+    if (state.waitingForDecision && (lowerInput.includes("no comprar") || lowerInput.includes("no compro") || lowerInput.includes("no lo compro") || lowerInput.includes("no voy a comprar") || lowerInput.includes("ahorrar"))) {
+        userData.savedTotal += state.itemPrice;
+        userData.avoidedCount++;
+        const nuevoStreak = updateStreak();
+        updateUserData(state.user, { savedTotal: userData.savedTotal, avoidedCount: userData.avoidedCount });
+        updateStatsDisplay();
+        addToHistory(state.itemName, state.itemPrice, "evitado");
+        
+        await aiSpeak([
+            `🎉 ¡Excelente decisión, ${state.user}! Has evitado gastar ${state.itemPrice}€ en ${state.itemName}.`,
+            `💰 Total ahorrado: ${userData.savedTotal}€`,
+            `🔥 Llevas ${nuevoStreak} día${nuevoStreak !== 1 ? 's' : ''} reflexionando. ¡Qué disciplina!`,
+            `¿Quieres analizar otro gasto? Escríbeme lo que estás pensando comprar.`
+        ]);
+        state.step = 'START';
+        state.waitingForDecision = false;
+        return;
+    }
+    
+    if (state.waitingForDecision && (lowerInput.includes("comprar") || lowerInput.includes("lo compro") || lowerInput.includes("si"))) {
+        addToHistory(state.itemName, state.itemPrice, "comprado");
+        await aiSpeak([
+            `👍 Vale, ${state.user}. Es tu decisión.`,
+            `💡 Consejo: espera 24 horas antes de comprar. Si aún lo quieres, adelante sin culpa.`,
+            `¿Quieres analizar otro gasto? Escríbeme lo que estás pensando comprar.`
+        ]);
+        state.step = 'START';
+        state.waitingForDecision = false;
+        return;
     }
     
     // FLUJO NORMAL
@@ -456,27 +488,15 @@ async function handleFlow(input) {
             return;
         }
         
-        // Guardar contexto
         state.itemName = product;
         state.itemPrice = price;
         state.step = 'ASK_NEED';
         
-        // Mensaje especial para coches de lujo
-        const esCocheLujo = ["ferrari", "lamborghini", "porsche", "bugatti"].some(p => product.toLowerCase().includes(p));
-        
-        if (esCocheLujo) {
-            await aiSpeak([
-                `✨ ¡Vaya! Un ${product} de ${price}€. ¡Qué pasada, ${state.user}!`,
-                `Antes de lanzarte a por semejante máquina...`,
-                `¿Es una necesidad real o un caprichazo que te haría feliz?`
-            ]);
-        } else {
-            await aiSpeak([
-                `✅ Entendido: ${product} por ${price}€.`,
-                `Ahora cuéntame, ${state.user}...`,
-                `¿Es algo que NECESITAS sí o sí (se te rompió, es imprescindible) o es más un CAPRICHO que te apetece?`
-            ]);
-        }
+        await aiSpeak([
+            `✅ Entendido: ${product} por ${price}€.`,
+            `Ahora cuéntame, ${state.user}...`,
+            `¿Es algo que NECESITAS sí o sí (se te rompió, es imprescindible) o es más un CAPRICHO que te apetece?`
+        ]);
     }
     
     else if (state.step === 'ASK_NEED') {
@@ -496,7 +516,7 @@ async function handleFlow(input) {
             `¿Qué decides, ${state.user}? Responde "comprar" o "no comprar"`
         ]);
         state.step = 'DECISION';
-        state.waitingForDecision = true;  // Activar el modo de espera de decisión
+        state.waitingForDecision = true;
     }
     
     else if (state.step === 'DECISION') {
