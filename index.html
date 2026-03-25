@@ -12,8 +12,9 @@
 
 <body>
 
-    <!-- 🌌 Fondo estrellas -->
-    <div id="stars"></div>
+    <!-- 🌌 Fondo estrellas (dos capas para efecto diferente) -->
+    <div id="stars-bg"></div>
+    <div id="stars-layer"></div>
 
     <!-- 🍔 MENÚ HAMBURGUESA -->
     <div class="menu-container">
@@ -42,20 +43,38 @@
         </nav>
     </div>
 
-    <!-- 👤 LOGIN OVERLAY -->
+    <!-- 👤 LOGIN OVERLAY MEJORADO -->
     <div id="login-overlay" class="login-overlay">
         <div class="login-card">
-            <h2>👋 ¡Hola!</h2>
-            <p>Inicia sesión para guardar tu progreso</p>
-            <input type="text" id="login-username" placeholder="Tu nombre" autocomplete="off">
-            <input type="password" id="login-password" placeholder="Contraseña (opcional)">
-            <button id="login-btn" class="action-btn">Comenzar →</button>
-            <small>💡 Sin correo, solo un nombre para recordarte</small>
+            <div class="login-icon">💰</div>
+            <h2>GastoZero</h2>
+            <p>Tu compañero para evitar gastos innecesarios</p>
+            
+            <div class="login-input-group">
+                <input type="text" id="login-username" placeholder="¿Cómo te llamas?" autocomplete="off">
+            </div>
+            
+            <button id="login-btn" class="login-btn">
+                <span>Comenzar a ahorrar</span>
+                <span class="btn-arrow">→</span>
+            </button>
+            
+            <div class="login-features">
+                <span>💾 Tus datos se guardan localmente</span>
+                <span>🔥 Racha de ahorro</span>
+                <span>📊 Estadísticas personales</span>
+            </div>
         </div>
     </div>
 
     <!-- 🌑 App (oculta hasta login) -->
     <div id="app" style="display: none;">
+        
+        <!-- Contador flotante -->
+        <div class="floating-counter" id="floating-counter">
+            <span class="counter-icon">💰</span>
+            <span class="counter-value" id="counter-value">0€</span>
+        </div>
 
         <!-- 💬 CHAT (Principal) -->
         <div id="chat-container" class="feature-content active"></div>
@@ -80,17 +99,17 @@
                         <span class="stat-value" id="stat-saved">0€</span>
                     </div>
                     <div class="stat-card">
-                        <span class="stat-icon">📅</span>
+                        <span class="stat-icon">🔥</span>
                         <span class="stat-label">Racha actual</span>
                         <span class="stat-value" id="stat-streak">0 días</span>
                     </div>
                     <div class="stat-card">
-                        <span class="stat-icon">🛡️</span>
+                        <span class="stat-icon">✅</span>
                         <span class="stat-label">Gastos evitados</span>
                         <span class="stat-value" id="stat-avoided">0</span>
                     </div>
                     <div class="stat-card">
-                        <span class="stat-icon">💪</span>
+                        <span class="stat-icon">💡</span>
                         <span class="stat-label">Consejos recibidos</span>
                         <span class="stat-value" id="stat-tips">0</span>
                     </div>
